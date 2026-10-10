@@ -5,7 +5,7 @@ Aplicación en Streamlit que recorre el flujo completo de un proyecto de regresi
 ## Requisitos
 
 - Python 3.11 o superior (probado con 3.13).
-- Los datos de Kaggle, que no se incluyen en el repositorio (ver [Datos](#datos)).
+- Los datos de Kaggle, incluidos en `data/` (ver [Datos](#datos)).
 
 ## Instalación
 
@@ -21,10 +21,12 @@ pip install -r requirements.txt
 
 ## Datos
 
-1. Descarga `train.csv` (y opcionalmente `test.csv`) desde la [página de datos de la competencia](https://www.kaggle.com/competitions/student-performance-prediction-machine-learning-challenge/data).
-2. Copia los archivos en la carpeta `data/`.
+El repositorio incluye los datos de la [competencia de Kaggle](https://www.kaggle.com/competitions/student-performance-prediction-machine-learning-challenge/data) en la carpeta `data/`:
 
-Si prefieres no copiarlos, en la sección **Extracción** de la app puedes subir el CSV directamente.
+- `data/train.csv`: 16 000 estudiantes con la variable objetivo; es el que carga la app por defecto.
+- `data/test.csv`: 4 000 estudiantes sin la variable objetivo; sirve para probar la predicción por lotes.
+
+En la sección **Extracción** también puedes subir otro CSV con la misma estructura.
 
 ## Ejecución
 

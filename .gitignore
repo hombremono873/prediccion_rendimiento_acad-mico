@@ -3,8 +3,12 @@
 __pycache__/
 *.pyc
 
-# Datos (se descargan de Kaggle) y artefactos generados por la app
+# Datos: solo se publican los de entrada que usa la app (necesarios para el despliegue en la nube)
 *.csv
+!data/train.csv
+!data/test.csv
+
+# Artefactos generados por la app
 models/*.joblib
 
 
