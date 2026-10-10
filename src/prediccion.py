@@ -89,8 +89,9 @@ def preparar_lote(df_crudo: pd.DataFrame, variables: list[str]) -> pd.DataFrame:
     return pd.concat([df[[config.COLUMNA_ID_LOTE]], X], axis=1)
 
 
-def predecir_lote(pipeline: Pipeline, variables: list[str], df_crudo: pd.DataFrame) -> pd.DataFrame:
-    """Predice un lote y devuelve el archivo con el formato de envío.
+def predecir_lote(pipeline: Pipeline, variables: list[str],
+                  df_crudo: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Predice un lote y devuelve el archivo de envío y la tabla de detalle.
 
     Args:
         pipeline (Pipeline): Pipeline entrenado.
@@ -98,10 +99,17 @@ def predecir_lote(pipeline: Pipeline, variables: list[str], df_crudo: pd.DataFra
         df_crudo (pd.DataFrame): Lote tal como se subió.
 
     Returns:
-        pd.DataFrame: Columnas id y productivity_score.
+        tuple[pd.DataFrame, pd.DataFrame]: Archivo de envío (id y productivity_score) y
+            tabla con todas las columnas de entrada en español más la predicción junto al id.
     """
     lote = preparar_lote(df_crudo, variables)
-    return pd.DataFrame({
+    predicciones = limitar_prediccion(pipeline.predict(lote[variables]))
+
+    envio = pd.DataFrame({
         config.COLUMNA_ID_LOTE: lote[config.COLUMNA_ID_LOTE],
-        config.COLUMNA_PREDICCION_LOTE: limitar_prediccion(pipeline.predict(lote[variables])),
+        config.COLUMNA_PREDICCION_LOTE: predicciones,
     })
+    detalle = traducir_columnas(df_crudo)
+    posicion = detalle.columns.get_loc(config.COLUMNA_ID_LOTE) + 1
+    detalle.insert(posicion, config.COLUMNA_PREDICCION_DETALLE, predicciones)
+    return envio, detalle

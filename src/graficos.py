@@ -116,6 +116,24 @@ def barras_coeficientes(coeficientes: pd.DataFrame) -> go.Figure:
                    "Variable", alto=max(450, 28 * len(datos)))
 
 
+def histograma_predicciones(predicciones: pd.Series) -> go.Figure:
+    """Grafica la distribución de las predicciones de un lote con su media.
+
+    Args:
+        predicciones (pd.Series): Puntajes predichos.
+
+    Returns:
+        go.Figure: Histograma con una línea vertical en la media.
+    """
+    media = float(predicciones.mean())
+    fig = go.Figure(go.Histogram(x=predicciones, nbinsx=30, marker_color=COLOR_PRINCIPAL, opacity=0.85))
+    fig.add_vline(x=media, line_dash="dash", line_color=COLOR_REFERENCIA,
+                  annotation_text=f"Media: {media:.{config.DECIMALES_PREDICCION}f}",
+                  annotation_position="top right")
+    return _estilo(fig, "Distribución de las predicciones del lote",
+                   "Puntaje de productividad predicho", "Número de estudiantes", alto=400)
+
+
 def residuos(y_real: pd.Series, y_pred: np.ndarray) -> go.Figure:
     """Grafica los residuos frente a los valores predichos.
 

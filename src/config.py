@@ -52,6 +52,8 @@ VARIABLES_POR_DEFECTO = [
 # Columnas del archivo de predicciones por lotes (formato de envío de Kaggle)
 COLUMNA_ID_LOTE = "id"
 COLUMNA_PREDICCION_LOTE = "productivity_score"
+# Columna con la predicción en la tabla de detalle que se muestra en pantalla
+COLUMNA_PREDICCION_DETALLE = "puntaje_productividad_predicho"
 
 # ================= MODELADO =================
 SEMILLA = 42

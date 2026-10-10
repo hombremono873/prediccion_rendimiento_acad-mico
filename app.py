@@ -155,6 +155,21 @@ def render_transformacion() -> None:
 
 
 # ================= 3. CARGA =================
+def sincronizar_porcentaje(origen: str) -> None:
+    """Iguala el control deslizante y el campo numérico del porcentaje de prueba.
+
+    Redondea el valor al paso configurado (por si se escribe, por ejemplo, 23) y lo
+    recuerda para restaurarlo al volver a la sección.
+
+    Args:
+        origen (str): Clave del widget que cambió el usuario.
+    """
+    paso = config.PORCENTAJE_PRUEBA_PASO
+    valor = int(round(ss[origen] / paso) * paso)
+    valor = min(max(valor, config.PORCENTAJE_PRUEBA_MIN), config.PORCENTAJE_PRUEBA_MAX)
+    ss["w_porcentaje_slider"] = ss["w_porcentaje_numero"] = ss["porcentaje_prueba_elegido"] = valor
+
+
 def render_carga() -> None:
     """Divide en entrenamiento y prueba, y guarda el dataset procesado."""
     if not requerir("transformacion", "Transformación"):
@@ -162,10 +177,20 @@ def render_carga() -> None:
     datos = ss["transformacion"]["datos"]
     aplicado = ss.get("division", {}).get("porcentaje_prueba")
 
-    restaurar_widget("w_porcentaje_prueba", aplicado or config.PORCENTAJE_PRUEBA_DEFECTO)
-    porcentaje = st.slider("Porcentaje de los datos para prueba", config.PORCENTAJE_PRUEBA_MIN,
-                           config.PORCENTAJE_PRUEBA_MAX, step=config.PORCENTAJE_PRUEBA_PASO,
-                           format="%d%%", key="w_porcentaje_prueba")
+    elegido = ss.get("porcentaje_prueba_elegido", aplicado or config.PORCENTAJE_PRUEBA_DEFECTO)
+    restaurar_widget("w_porcentaje_slider", elegido)
+    restaurar_widget("w_porcentaje_numero", elegido)
+    limites = (config.PORCENTAJE_PRUEBA_MIN, config.PORCENTAJE_PRUEBA_MAX)
+    col_slider, col_numero = st.columns([5, 1], vertical_alignment="bottom")
+    with col_slider:
+        st.slider("Porcentaje de los datos para prueba", *limites, step=config.PORCENTAJE_PRUEBA_PASO,
+                  format="%d%%", key="w_porcentaje_slider",
+                  on_change=sincronizar_porcentaje, args=("w_porcentaje_slider",))
+    with col_numero:
+        st.number_input("Escribe o usa − / +", *limites, step=config.PORCENTAJE_PRUEBA_PASO,
+                        key="w_porcentaje_numero",
+                        on_change=sincronizar_porcentaje, args=("w_porcentaje_numero",))
+    porcentaje = ss["w_porcentaje_slider"]
     filas_prueba = round(len(datos) * porcentaje / 100)
     st.caption(f"Entrenamiento {100 - porcentaje}% (~{len(datos) - filas_prueba:,} filas) · "
                f"Prueba {porcentaje}% (~{filas_prueba:,} filas) · semilla {config.SEMILLA}")
@@ -353,7 +378,7 @@ def formulario_prediccion(m: dict) -> None:
 
 
 def prediccion_por_lotes(m: dict) -> None:
-    """Predice un CSV subido y ofrece descargar el resultado.
+    """Predice un CSV subido, muestra entrada y predicción, y ofrece descargar el resultado.
 
     Args:
         m (dict): Modelo vigente con pipeline y variables.
@@ -362,17 +387,25 @@ def prediccion_por_lotes(m: dict) -> None:
     if archivo is None:
         return
     try:
-        resultado = prediccion.predecir_lote(m["pipeline"], m["variables"], etl.leer_csv_bytes(archivo.getvalue()))
+        envio, detalle = prediccion.predecir_lote(m["pipeline"], m["variables"],
+                                                  etl.leer_csv_bytes(archivo.getvalue()))
     except ValueError as error:
         st.error(str(error))
         return
     except Exception as error:
         st.error(f"No se pudo procesar el archivo: {error}")
         return
-    st.success(f"Se predijeron {len(resultado):,} filas.")
-    interfaz.tabla(resultado, ocultar_indice=True)
-    st.download_button("Descargar predicciones", etl.a_csv_bytes(resultado),
+
+    st.success(f"Se predijeron {len(envio):,} filas.")
+    st.download_button("Descargar predicciones", etl.a_csv_bytes(envio),
                        file_name="predicciones.csv", mime="text/csv")
+    st.caption(f"El archivo descargado contiene solo `{config.COLUMNA_ID_LOTE}` y "
+               f"`{config.COLUMNA_PREDICCION_LOTE}` (formato de envío de Kaggle).")
+
+    st.subheader("Datos de entrada y predicción")
+    interfaz.tabla(detalle, ocultar_indice=True)
+    st.plotly_chart(graficos.histograma_predicciones(detalle[config.COLUMNA_PREDICCION_DETALLE]),
+                    use_container_width=True)
 
 
 def render_prediccion() -> None:
