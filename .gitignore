@@ -1,0 +1,15 @@
+# Entorno y caché de Python
+.venv/
+__pycache__/
+*.pyc
+
+# Datos (se descargan de Kaggle) y artefactos generados por la app
+*.csv
+models/*.joblib
+
+
+# Copias de seguridad
+*_backup.ipynb
+
+# Credenciales locales de Streamlit
+.streamlit/secrets.toml

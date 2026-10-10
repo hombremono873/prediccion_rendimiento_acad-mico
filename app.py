@@ -1,0 +1,419 @@
+"""Aplicación Streamlit: ETL, análisis, entrenamiento y predicción de la productividad estudiantil."""
+
+import pandas as pd
+import streamlit as st
+
+from src import analisis, config, etl, graficos, interfaz, modelo, prediccion
+
+ss = st.session_state
+
+# Claves de estado en el orden del flujo; invalidar un paso borra también los siguientes
+CLAVES_FLUJO = ["df_crudo", "transformacion", "division", "seleccion", "modelo"]
+
+
+# ================= ESTADO =================
+def invalidar_desde(clave: str) -> None:
+    """Borra del estado la clave indicada y todas las que dependen de ella.
+
+    Args:
+        clave (str): Primera clave de CLAVES_FLUJO que se invalida.
+    """
+    for c in CLAVES_FLUJO[CLAVES_FLUJO.index(clave):]:
+        ss.pop(c, None)
+
+
+def requerir(clave: str, seccion: str) -> bool:
+    """Comprueba que exista un paso previo y, si falta, muestra un aviso.
+
+    Args:
+        clave (str): Clave de estado que debe existir.
+        seccion (str): Sección a la que debe ir el usuario.
+
+    Returns:
+        bool: True si el paso previo está completo.
+    """
+    if clave in ss:
+        return True
+    st.warning(f"Primero completa la sección **{seccion}**.")
+    return False
+
+
+def modelo_vigente() -> dict | None:
+    """Devuelve el modelo entrenado que corresponde a la selección actual.
+
+    Prioriza el modelo de la sesión; si no hay, usa el guardado en disco siempre que
+    sus variables coincidan con la selección vigente (o no haya selección todavía).
+
+    Returns:
+        dict | None: Modelo con su pipeline y variables, o None si no hay uno válido.
+    """
+    if "modelo" in ss:
+        return ss["modelo"]
+    if not config.RUTA_MODELO.exists():
+        return None
+    try:
+        guardado = modelo.cargar_modelo(str(config.RUTA_MODELO), config.RUTA_MODELO.stat().st_mtime)
+    except Exception as error:  # archivo corrupto o de otra versión de scikit-learn
+        st.error(f"No se pudo cargar el modelo guardado: {error}")
+        return None
+    seleccion = ss.get("seleccion")
+    if seleccion is not None and seleccion != guardado["variables"]:
+        return None
+    return guardado
+
+
+# ================= 1. EXTRACCIÓN =================
+def render_extraccion() -> None:
+    """Carga el CSV del proyecto o uno subido y muestra su estructura."""
+    fuente = st.radio("Origen de los datos",
+                      [f"Archivo del proyecto ({config.RUTA_DATOS.relative_to(config.RAIZ_PROYECTO).as_posix()})",
+                       "Subir un archivo CSV"], horizontal=True)
+
+    df, origen = None, None
+    if fuente.startswith("Archivo"):
+        if not config.RUTA_DATOS.exists():
+            st.error(f"No se encontró {config.RUTA_DATOS}. Copia ahí el train.csv de Kaggle o sube un archivo.")
+        elif st.button("Cargar datos", type="primary"):
+            marca = config.RUTA_DATOS.stat().st_mtime
+            df, origen = etl.leer_csv_ruta(str(config.RUTA_DATOS), marca), f"disco:{marca}"
+    else:
+        archivo = st.file_uploader("Archivo CSV", type="csv")
+        if archivo is not None and st.button("Cargar archivo subido", type="primary"):
+            try:
+                df, origen = etl.leer_csv_bytes(archivo.getvalue()), f"subido:{archivo.name}:{archivo.size}"
+            except Exception as error:
+                st.error(f"No se pudo leer el CSV: {error}")
+
+    if df is not None and origen != ss.get("origen"):
+        invalidar_desde("df_crudo")
+        ss["df_crudo"], ss["origen"] = df, origen
+        st.success("Datos cargados. Los pasos siguientes se reiniciaron.")
+
+    if "df_crudo" not in ss:
+        st.info("Elige un origen y pulsa el botón para cargar los datos.")
+        return
+
+    # Solo para visualizar: la traducción real se aplica en Transformación
+    vista = etl.traducir_columnas(ss["df_crudo"])
+    c1, c2 = st.columns(2)
+    c1.metric("Filas", f"{vista.shape[0]:,}")
+    c2.metric("Columnas", vista.shape[1])
+    st.caption("Los nombres se muestran traducidos; la traducción se aplica al dataset en Transformación.")
+    st.subheader("Tipos de datos")
+    st.dataframe(etl.resumen_tipos(vista), hide_index=True, use_container_width=True)
+    st.subheader("Vista previa")
+    st.dataframe(vista.head(config.FILAS_VISTA_PREVIA), use_container_width=True)
+
+
+# ================= 2. TRANSFORMACIÓN =================
+def render_transformacion() -> None:
+    """Traduce, limpia, elimina identificadores y codifica las categóricas."""
+    if not requerir("df_crudo", "Extracción"):
+        return
+
+    if st.button("Aplicar transformación", type="primary"):
+        try:
+            resultado = etl.transformar(ss["df_crudo"])
+        except ValueError as error:
+            st.error(str(error))
+            return
+        invalidar_desde("transformacion")
+        ss["transformacion"] = resultado
+        st.success("Transformación aplicada.")
+
+    if "transformacion" not in ss:
+        st.info("Pulsa el botón para transformar los datos.")
+        return
+
+    t = ss["transformacion"]
+    st.markdown(
+        f"- Columnas traducidas al español.\n"
+        f"- Columnas de identificación eliminadas: {', '.join(t['columnas_id']) or 'ninguna'}.\n"
+        f"- Dummies creadas (drop_first=True): {', '.join(t['columnas_dummy']) or 'ninguna'}."
+    )
+
+    st.subheader("Calidad de los datos")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Columnas con nulos", len(t["tabla_nulos"]))
+    c2.metric("Filas duplicadas", t["duplicados"])
+    c3.metric("Filas eliminadas", t["filas_eliminadas"])
+    if t["tabla_nulos"].empty:
+        st.success("No hay valores nulos.")
+    else:
+        st.dataframe(t["tabla_nulos"], hide_index=True)
+        st.warning("Las filas con valores nulos se eliminaron.")
+    if t["duplicados"]:
+        st.warning("Las filas duplicadas se eliminaron.")
+
+    st.subheader("Tabla resultante")
+    st.dataframe(t["datos"].head(config.FILAS_VISTA_PREVIA), use_container_width=True)
+    st.subheader("Estadísticas descriptivas")
+    descriptivas = t["datos"].describe().T.rename(columns={
+        "count": "conteo", "mean": "media", "std": "desviación", "min": "mínimo",
+        "25%": "percentil 25", "50%": "mediana", "75%": "percentil 75", "max": "máximo"})
+    st.dataframe(descriptivas, use_container_width=True)
+
+
+# ================= 3. CARGA =================
+def render_carga() -> None:
+    """Divide en entrenamiento y prueba, y guarda el dataset procesado."""
+    if not requerir("transformacion", "Transformación"):
+        return
+    datos = ss["transformacion"]["datos"]
+
+    if st.button("Dividir y guardar", type="primary"):
+        X_train, X_test, y_train, y_test = etl.dividir_datos(datos)
+        invalidar_desde("division")
+        ss["division"] = {"X_train": X_train, "X_test": X_test, "y_train": y_train, "y_test": y_test}
+        try:
+            ruta = etl.guardar_procesado(datos)
+            st.success(f"Dataset procesado guardado en {ruta.relative_to(config.RAIZ_PROYECTO).as_posix()}.")
+        except OSError as error:
+            st.error(f"No se pudo guardar el dataset procesado: {error}")
+
+    if "division" not in ss:
+        st.info(f"Pulsa el botón para dividir los datos ({1 - config.TAMANO_PRUEBA:.0%} / "
+                f"{config.TAMANO_PRUEBA:.0%}, semilla {config.SEMILLA}).")
+        return
+
+    d = ss["division"]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Filas de entrenamiento", f"{len(d['X_train']):,}")
+    c2.metric("Filas de prueba", f"{len(d['X_test']):,}")
+    c3.metric("Predictores", d["X_train"].shape[1])
+    st.download_button("Descargar dataset procesado", etl.a_csv_bytes(datos),
+                       file_name=config.RUTA_PROCESADO.name, mime="text/csv")
+
+
+# ================= 4. ANÁLISIS =================
+def render_analisis() -> None:
+    """Muestra distribuciones y la relación de cada variable con el objetivo."""
+    if not requerir("division", "Carga"):
+        return
+    X, y = ss["division"]["X_train"], ss["division"]["y_train"]
+    st.caption("El análisis usa solo el conjunto de entrenamiento.")
+
+    st.subheader("Relación con la variable objetivo")
+    tabla = analisis.tabla_relaciones(X, y)
+    st.dataframe(tabla.style.format(precision=4), hide_index=True, use_container_width=True)
+    st.plotly_chart(graficos.barras_informacion_mutua(tabla), use_container_width=True)
+
+    st.subheader("Distribuciones")
+    datos = pd.concat([X, y], axis=1)
+    columnas = st.columns(config.COLUMNAS_HISTOGRAMAS)
+    for i, nombre in enumerate(datos.columns):
+        with columnas[i % config.COLUMNAS_HISTOGRAMAS]:
+            serie = datos[nombre]
+            st.plotly_chart(graficos.histograma(serie, analisis.es_discreta(serie)),
+                            use_container_width=True)
+
+
+# ================= 5. SELECCIÓN =================
+def restaurar_widget(clave_widget: str, valor: object) -> None:
+    """Recupera el valor de un widget que Streamlit borró al cambiar de sección.
+
+    Args:
+        clave_widget (str): Clave del widget.
+        valor (object): Valor a restaurar si el widget no está en el estado.
+    """
+    if clave_widget not in ss:
+        ss[clave_widget] = valor
+
+
+def render_seleccion() -> None:
+    """Permite elegir las variables del modelo."""
+    if not requerir("division", "Carga"):
+        return
+    disponibles = list(ss["division"]["X_train"].columns)
+    por_defecto = [v for v in config.VARIABLES_POR_DEFECTO if v in disponibles]
+    previa = ss.get("preferencias_seleccion", {})
+
+    restaurar_widget("w_modo", previa.get("modo", config.MODO_SELECCIONADAS))
+    modo = st.radio("Modo", [config.MODO_SELECCIONADAS, config.MODO_TODAS], key="w_modo", horizontal=True)
+
+    if modo == config.MODO_SELECCIONADAS:
+        restaurar_widget("w_incluidas", [v for v in previa.get("incluidas", por_defecto) if v in disponibles])
+        base = st.multiselect("Variables a usar", disponibles, key="w_incluidas")
+    else:
+        base = disponibles
+
+    # Se depura antes de dibujar el widget para que no contenga variables fuera de las opciones
+    ss["w_eliminar"] = [v for v in ss.get("w_eliminar", previa.get("eliminar", [])) if v in base]
+    eliminar = st.multiselect("Variables a eliminar del modelo", base, key="w_eliminar")
+
+    finales = [v for v in base if v not in eliminar]
+    incluidas = base if modo == config.MODO_SELECCIONADAS else previa.get("incluidas", por_defecto)
+    ss["preferencias_seleccion"] = {"modo": modo, "incluidas": incluidas, "eliminar": eliminar}
+
+    if not finales:
+        ss.pop("seleccion", None)
+        st.error("Debe quedar al menos una variable para entrenar el modelo.")
+        return
+
+    if ss.get("seleccion") != finales:
+        if "modelo" in ss:
+            ss.pop("modelo")
+            st.warning("Cambiaste las variables: el modelo entrenado se descartó. Vuelve a entrenar.")
+        ss["seleccion"] = finales
+
+    st.subheader(f"Variables que usará el modelo ({len(finales)})")
+    st.dataframe(pd.DataFrame({"Variable": finales}), hide_index=True)
+
+
+# ================= 6. ENTRENAMIENTO =================
+def render_entrenamiento() -> None:
+    """Entrena el pipeline y muestra métricas, coeficientes y gráficos."""
+    if not requerir("division", "Carga") or not requerir("seleccion", "Selección de variables"):
+        return
+    variables = ss["seleccion"]
+    st.write(f"**Variables ({len(variables)}):** {', '.join(variables)}")
+
+    if st.button("Entrenar modelo", type="primary"):
+        d = ss["division"]
+        with st.spinner("Entrenando..."):
+            resultado = modelo.entrenar(d["X_train"], d["X_test"], d["y_train"], d["y_test"],
+                                        variables, ss["transformacion"]["categorias"])
+        ss["modelo"] = resultado
+        try:
+            ruta = modelo.guardar_modelo(resultado)
+            modelo.cargar_modelo.clear()
+            st.success(f"Modelo entrenado y guardado en {ruta.relative_to(config.RAIZ_PROYECTO).as_posix()}.")
+        except OSError as error:
+            st.error(f"El modelo se entrenó, pero no se pudo guardar: {error}")
+
+    if "modelo" not in ss:
+        st.info("Pulsa el botón para entrenar con las variables seleccionadas.")
+        return
+
+    m = ss["modelo"]
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader(f"Validación cruzada ({config.N_PARTICIONES} particiones)")
+        st.dataframe(m["metricas_cv"].style.format(precision=4), use_container_width=True)
+    with c2:
+        st.subheader("Métricas")
+        st.dataframe(m["metricas"].style.format(precision=4), use_container_width=True)
+
+    st.subheader("Coeficientes estandarizados")
+    st.dataframe(m["coeficientes"].style.format({"Coeficiente": "{:.4f}"}), hide_index=True,
+                 use_container_width=True)
+
+    c1, c2 = st.columns(2)
+    c1.plotly_chart(graficos.real_vs_predicho(m["y_test"], m["y_pred_test"]), use_container_width=True)
+    c2.plotly_chart(graficos.residuos(m["y_test"], m["y_pred_test"]), use_container_width=True)
+    st.plotly_chart(graficos.barras_coeficientes(m["coeficientes"]), use_container_width=True)
+
+
+# ================= 7. PREDICCIÓN =================
+def formulario_prediccion(m: dict) -> None:
+    """Genera un formulario con un campo por variable del modelo y muestra la predicción.
+
+    Args:
+        m (dict): Modelo vigente con pipeline, variables, rangos y categorías.
+    """
+    variables, rangos = m["variables"], m["rangos"]
+    dummies = {c: [v for v in variables if v.startswith(f"{c}_")] for c in m["categorias"]}
+    es_dummy = {v for grupo in dummies.values() for v in grupo}
+    numericas = [v for v in variables if v not in es_dummy]
+
+    with st.form("formulario_prediccion"):
+        valores = {}
+        columnas = st.columns(config.COLUMNAS_HISTOGRAMAS)
+        for i, v in enumerate(numericas):
+            r = rangos[v]
+            with columnas[i % config.COLUMNAS_HISTOGRAMAS]:
+                if r["entera"]:
+                    valores[v] = st.number_input(v, min_value=int(r["min"]), max_value=int(r["max"]),
+                                                 value=int(round(r["mediana"])), step=1)
+                else:
+                    valores[v] = st.number_input(v, min_value=r["min"], max_value=r["max"],
+                                                 value=r["mediana"], step=0.01, format="%.2f")
+        for categoria, grupo in dummies.items():
+            if grupo:
+                elegida = st.selectbox(categoria, m["categorias"][categoria])
+                valores.update({v: int(v == f"{categoria}_{elegida}") for v in grupo})
+        enviado = st.form_submit_button("Predecir", type="primary")
+
+    if enviado:
+        resultado = prediccion.predecir_individual(m["pipeline"], variables, valores)
+        st.metric("Puntaje de productividad predicho", f"{resultado:.{config.DECIMALES_PREDICCION}f}")
+
+
+def prediccion_por_lotes(m: dict) -> None:
+    """Predice un CSV subido y ofrece descargar el resultado.
+
+    Args:
+        m (dict): Modelo vigente con pipeline y variables.
+    """
+    archivo = st.file_uploader("CSV con los estudiantes a predecir", type="csv", key="archivo_lote")
+    if archivo is None:
+        return
+    try:
+        resultado = prediccion.predecir_lote(m["pipeline"], m["variables"], etl.leer_csv_bytes(archivo.getvalue()))
+    except ValueError as error:
+        st.error(str(error))
+        return
+    except Exception as error:
+        st.error(f"No se pudo procesar el archivo: {error}")
+        return
+    st.success(f"Se predijeron {len(resultado):,} filas.")
+    st.dataframe(resultado.head(config.FILAS_VISTA_PREVIA), hide_index=True)
+    st.download_button("Descargar predicciones", etl.a_csv_bytes(resultado),
+                       file_name="predicciones.csv", mime="text/csv")
+
+
+def render_prediccion() -> None:
+    """Predice con datos ingresados por el usuario o con un lote."""
+    m = modelo_vigente()
+    if m is None:
+        st.warning("No hay un modelo entrenado para la selección actual. Ve a **Entrenamiento**.")
+        return
+    if "modelo" not in ss:
+        st.info("Usando el último modelo guardado en disco.")
+    st.caption(f"Variables del modelo: {', '.join(m['variables'])}")
+
+    individual, lote = st.tabs(["Predicción individual", "Predicción por lotes"])
+    with individual:
+        formulario_prediccion(m)
+    with lote:
+        prediccion_por_lotes(m)
+
+
+# ================= NAVEGACIÓN =================
+SECCIONES = dict(zip(config.SECCIONES, [
+    render_extraccion, render_transformacion, render_carga, render_analisis,
+    render_seleccion, render_entrenamiento, render_prediccion,
+]))
+
+
+def barra_lateral() -> str:
+    """Dibuja el menú lateral con el estado de cada paso.
+
+    Returns:
+        str: Sección elegida.
+    """
+    interfaz.marca_barra_lateral()
+    seccion = st.sidebar.radio("Secciones", config.SECCIONES, format_func=interfaz.etiqueta_seccion)
+    st.sidebar.divider()
+    interfaz.estado_pasos({
+        "Datos extraídos": "df_crudo" in ss,
+        "Datos transformados": "transformacion" in ss,
+        "Datos divididos": "division" in ss,
+        "Variables seleccionadas": "seleccion" in ss,
+        "Modelo entrenado": "modelo" in ss,
+    })
+    interfaz.creditos_barra_lateral()
+    return seccion
+
+
+def main() -> None:
+    """Punto de entrada de la aplicación."""
+    st.set_page_config(page_title=config.TITULO_APP, page_icon="📊", layout="wide")
+    interfaz.aplicar_estilos()
+    seccion = barra_lateral()
+    interfaz.encabezado(seccion)
+    SECCIONES[seccion]()
+    interfaz.pie_de_pagina()
+
+
+main()
