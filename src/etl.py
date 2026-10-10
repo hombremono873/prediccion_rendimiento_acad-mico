@@ -160,18 +160,20 @@ def transformar(df_crudo: pd.DataFrame) -> dict:
 
 
 # ================= CARGA =================
-def dividir_datos(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+def dividir_datos(df: pd.DataFrame, porcentaje_prueba: int = config.PORCENTAJE_PRUEBA_DEFECTO
+                  ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
     """Separa predictores y objetivo, y divide en entrenamiento y prueba.
 
     Args:
         df (pd.DataFrame): Datos procesados con la variable objetivo.
+        porcentaje_prueba (int): Porcentaje de filas que se reserva para prueba.
 
     Returns:
         tuple: X_train, X_test, y_train, y_test.
     """
     X = df.drop(columns=[config.OBJETIVO])
     y = df[config.OBJETIVO]
-    return train_test_split(X, y, test_size=config.TAMANO_PRUEBA, random_state=config.SEMILLA)
+    return train_test_split(X, y, test_size=porcentaje_prueba / 100, random_state=config.SEMILLA)
 
 
 def guardar_procesado(df: pd.DataFrame, ruta: Path = config.RUTA_PROCESADO) -> Path:

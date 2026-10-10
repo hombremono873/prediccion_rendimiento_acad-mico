@@ -55,7 +55,11 @@ COLUMNA_PREDICCION_LOTE = "productivity_score"
 
 # ================= MODELADO =================
 SEMILLA = 42
-TAMANO_PRUEBA = 0.2
+# Porcentaje del dataset que se reserva para prueba (el usuario lo elige en la sección Carga)
+PORCENTAJE_PRUEBA_DEFECTO = 20
+PORCENTAJE_PRUEBA_MIN = 10
+PORCENTAJE_PRUEBA_MAX = 50
+PORCENTAJE_PRUEBA_PASO = 5
 N_PARTICIONES = 5
 RANGO_PREDICCION = (0.0, 100.0)
 DECIMALES_PREDICCION = 2
@@ -84,15 +88,21 @@ SUBTITULO_APP = "Regresión lineal sobre hábitos de estudio"
 AUTOR = "Omar Alberto Torres"
 AUTOR_DESCRIPCION = "Estudiante de la Maestría en Análisis de Datos"
 
-# Paleta: fondo negro azulado con acentos azules (debe coincidir con .streamlit/config.toml)
+# Paleta: área principal blanca (debe coincidir con .streamlit/config.toml) y
+# barra lateral y encabezados en negro azulado con acentos azules
 COLORES = {
+    "fondo_principal": "#FFFFFF",
+    "superficie_clara": "#F8FAFC",
+    "borde_claro": "#E2E8F0",
+    "texto_oscuro": "#0F172A",
+    "texto_secundario": "#475569",
     "fondo": "#0B1120",
     "superficie": "#111827",
     "borde": "#1E293B",
     "texto": "#E5E7EB",
     "texto_claro": "#FFFFFF",
     "texto_suave": "#94A3B8",
-    "primario": "#3B82F6",
+    "primario": "#2563EB",
     "primario_oscuro": "#1E3A8A",
     "acento": "#38BDF8",
     "positivo": "#22C55E",
@@ -102,8 +112,14 @@ COLORES = {
 
 MODO_SELECCIONADAS = "Variables seleccionadas"
 MODO_TODAS = "Todas las variables"
-FILAS_VISTA_PREVIA = 10
+# Las tablas muestran todas sus filas hasta ALTO_MAX_TABLA píxeles; a partir de ahí usan scroll
+ALTO_FILA_TABLA = 35
+ALTO_MAX_TABLA = 450
 COLUMNAS_HISTOGRAMAS = 3
 # Una variable entera con hasta este número de valores distintos se trata como discreta
 MAX_VALORES_DISCRETA = 25
 PUNTOS_KDE = 200
+# Tamaño (px) del pulgar y alto de la pista del control deslizante; Streamlit usa 12 y 4
+TAMANO_PULGAR_SLIDER = 24
+ALTO_PISTA_SLIDER = 6
+AJUSTE_VERTICAL_PULGAR = 0  # medido en el navegador para centrar el pulgar sobre la pista

@@ -42,7 +42,7 @@ Cada sección de la barra lateral depende de la anterior; si falta un paso, la a
 |---|---|
 | 1. Extracción | Carga `data/train.csv` o un CSV subido; muestra filas, columnas, tipos y una vista previa. |
 | 2. Transformación | Traduce columnas y categorías al español, elimina `id` e `id_estudiante`, elimina nulos y duplicados, y crea dummies de `genero` (`drop_first=True`). |
-| 3. Carga | Divide en entrenamiento y prueba (80/20, semilla 42), guarda `data/procesado.csv` y permite descargarlo. |
+| 3. Carga | Divide en entrenamiento y prueba con el porcentaje que elija el usuario (10 % a 50 %, 20 % por defecto, semilla 42), guarda `data/procesado.csv` y permite descargarlo. |
 | 4. Análisis de variables | Histogramas (con curva KDE solo en variables continuas), tabla de Pearson, Spearman e información mutua, y gráfico de información mutua. Usa solo el conjunto de entrenamiento. |
 | 5. Selección de variables | Modo "Variables seleccionadas" (6 por defecto, editables) o "Todas las variables", más una lista de variables a eliminar. Cambiar la selección descarta el modelo entrenado. |
 | 6. Entrenamiento | Pipeline `StandardScaler` + `LinearRegression`, validación cruzada KFold (5), métricas, coeficientes y gráficos de real vs. predicho, coeficientes y residuos. Guarda `models/modelo.joblib`. |

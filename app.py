@@ -100,9 +100,9 @@ def render_extraccion() -> None:
     c2.metric("Columnas", vista.shape[1])
     st.caption("Los nombres se muestran traducidos; la traducción se aplica al dataset en Transformación.")
     st.subheader("Tipos de datos")
-    st.dataframe(etl.resumen_tipos(vista), hide_index=True, use_container_width=True)
-    st.subheader("Vista previa")
-    st.dataframe(vista.head(config.FILAS_VISTA_PREVIA), use_container_width=True)
+    interfaz.tabla(etl.resumen_tipos(vista), ocultar_indice=True)
+    st.subheader("Datos")
+    interfaz.tabla(vista)
 
 
 # ================= 2. TRANSFORMACIÓN =================
@@ -140,18 +140,18 @@ def render_transformacion() -> None:
     if t["tabla_nulos"].empty:
         st.success("No hay valores nulos.")
     else:
-        st.dataframe(t["tabla_nulos"], hide_index=True)
+        interfaz.tabla(t["tabla_nulos"], ocultar_indice=True)
         st.warning("Las filas con valores nulos se eliminaron.")
     if t["duplicados"]:
         st.warning("Las filas duplicadas se eliminaron.")
 
     st.subheader("Tabla resultante")
-    st.dataframe(t["datos"].head(config.FILAS_VISTA_PREVIA), use_container_width=True)
+    interfaz.tabla(t["datos"])
     st.subheader("Estadísticas descriptivas")
     descriptivas = t["datos"].describe().T.rename(columns={
         "count": "conteo", "mean": "media", "std": "desviación", "min": "mínimo",
         "25%": "percentil 25", "50%": "mediana", "75%": "percentil 75", "max": "máximo"})
-    st.dataframe(descriptivas, use_container_width=True)
+    interfaz.tabla(descriptivas)
 
 
 # ================= 3. CARGA =================
@@ -160,11 +160,22 @@ def render_carga() -> None:
     if not requerir("transformacion", "Transformación"):
         return
     datos = ss["transformacion"]["datos"]
+    aplicado = ss.get("division", {}).get("porcentaje_prueba")
+
+    restaurar_widget("w_porcentaje_prueba", aplicado or config.PORCENTAJE_PRUEBA_DEFECTO)
+    porcentaje = st.slider("Porcentaje de los datos para prueba", config.PORCENTAJE_PRUEBA_MIN,
+                           config.PORCENTAJE_PRUEBA_MAX, step=config.PORCENTAJE_PRUEBA_PASO,
+                           format="%d%%", key="w_porcentaje_prueba")
+    filas_prueba = round(len(datos) * porcentaje / 100)
+    st.caption(f"Entrenamiento {100 - porcentaje}% (~{len(datos) - filas_prueba:,} filas) · "
+               f"Prueba {porcentaje}% (~{filas_prueba:,} filas) · semilla {config.SEMILLA}")
 
     if st.button("Dividir y guardar", type="primary"):
-        X_train, X_test, y_train, y_test = etl.dividir_datos(datos)
+        X_train, X_test, y_train, y_test = etl.dividir_datos(datos, porcentaje)
         invalidar_desde("division")
-        ss["division"] = {"X_train": X_train, "X_test": X_test, "y_train": y_train, "y_test": y_test}
+        ss["division"] = {"X_train": X_train, "X_test": X_test, "y_train": y_train, "y_test": y_test,
+                          "porcentaje_prueba": porcentaje}
+        aplicado = porcentaje
         try:
             ruta = etl.guardar_procesado(datos)
             st.success(f"Dataset procesado guardado en {ruta.relative_to(config.RAIZ_PROYECTO).as_posix()}.")
@@ -172,15 +183,18 @@ def render_carga() -> None:
             st.error(f"No se pudo guardar el dataset procesado: {error}")
 
     if "division" not in ss:
-        st.info(f"Pulsa el botón para dividir los datos ({1 - config.TAMANO_PRUEBA:.0%} / "
-                f"{config.TAMANO_PRUEBA:.0%}, semilla {config.SEMILLA}).")
+        st.info("Elige el porcentaje de prueba y pulsa el botón para dividir los datos.")
         return
+    if porcentaje != aplicado:
+        st.warning(f"La división actual usa {aplicado}% para prueba. Pulsa **Dividir y guardar** "
+                   f"para aplicar {porcentaje}% (el modelo entrenado se descartará).")
 
     d = ss["division"]
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Filas de entrenamiento", f"{len(d['X_train']):,}")
-    c2.metric("Filas de prueba", f"{len(d['X_test']):,}")
-    c3.metric("Predictores", d["X_train"].shape[1])
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("División aplicada", f"{100 - d['porcentaje_prueba']}/{d['porcentaje_prueba']}")
+    c2.metric("Filas de entrenamiento", f"{len(d['X_train']):,}")
+    c3.metric("Filas de prueba", f"{len(d['X_test']):,}")
+    c4.metric("Predictores", d["X_train"].shape[1])
     st.download_button("Descargar dataset procesado", etl.a_csv_bytes(datos),
                        file_name=config.RUTA_PROCESADO.name, mime="text/csv")
 
@@ -195,7 +209,7 @@ def render_analisis() -> None:
 
     st.subheader("Relación con la variable objetivo")
     tabla = analisis.tabla_relaciones(X, y)
-    st.dataframe(tabla.style.format(precision=4), hide_index=True, use_container_width=True)
+    interfaz.tabla(tabla.style.format(precision=4), ocultar_indice=True)
     st.plotly_chart(graficos.barras_informacion_mutua(tabla), use_container_width=True)
 
     st.subheader("Distribuciones")
@@ -257,7 +271,7 @@ def render_seleccion() -> None:
         ss["seleccion"] = finales
 
     st.subheader(f"Variables que usará el modelo ({len(finales)})")
-    st.dataframe(pd.DataFrame({"Variable": finales}), hide_index=True)
+    interfaz.tabla(pd.DataFrame({"Variable": finales}), ocultar_indice=True)
 
 
 # ================= 6. ENTRENAMIENTO =================
@@ -289,14 +303,13 @@ def render_entrenamiento() -> None:
     c1, c2 = st.columns(2)
     with c1:
         st.subheader(f"Validación cruzada ({config.N_PARTICIONES} particiones)")
-        st.dataframe(m["metricas_cv"].style.format(precision=4), use_container_width=True)
+        interfaz.tabla(m["metricas_cv"].style.format(precision=4))
     with c2:
         st.subheader("Métricas")
-        st.dataframe(m["metricas"].style.format(precision=4), use_container_width=True)
+        interfaz.tabla(m["metricas"].style.format(precision=4))
 
     st.subheader("Coeficientes estandarizados")
-    st.dataframe(m["coeficientes"].style.format({"Coeficiente": "{:.4f}"}), hide_index=True,
-                 use_container_width=True)
+    interfaz.tabla(m["coeficientes"].style.format({"Coeficiente": "{:.4f}"}), ocultar_indice=True)
 
     c1, c2 = st.columns(2)
     c1.plotly_chart(graficos.real_vs_predicho(m["y_test"], m["y_pred_test"]), use_container_width=True)
@@ -357,7 +370,7 @@ def prediccion_por_lotes(m: dict) -> None:
         st.error(f"No se pudo procesar el archivo: {error}")
         return
     st.success(f"Se predijeron {len(resultado):,} filas.")
-    st.dataframe(resultado.head(config.FILAS_VISTA_PREVIA), hide_index=True)
+    interfaz.tabla(resultado, ocultar_indice=True)
     st.download_button("Descargar predicciones", etl.a_csv_bytes(resultado),
                        file_name="predicciones.csv", mime="text/csv")
 
@@ -387,13 +400,17 @@ SECCIONES = dict(zip(config.SECCIONES, [
 
 
 def barra_lateral() -> str:
-    """Dibuja el menú lateral con el estado de cada paso.
+    """Dibuja la marca y el menú de secciones de la barra lateral.
 
     Returns:
         str: Sección elegida.
     """
     interfaz.marca_barra_lateral()
-    seccion = st.sidebar.radio("Secciones", config.SECCIONES, format_func=interfaz.etiqueta_seccion)
+    return st.sidebar.radio("Secciones", config.SECCIONES, format_func=interfaz.etiqueta_seccion)
+
+
+def estado_barra_lateral() -> None:
+    """Muestra el avance del flujo y los créditos; se dibuja después de la sección para estar al día."""
     st.sidebar.divider()
     interfaz.estado_pasos({
         "Datos extraídos": "df_crudo" in ss,
@@ -403,7 +420,6 @@ def barra_lateral() -> str:
         "Modelo entrenado": "modelo" in ss,
     })
     interfaz.creditos_barra_lateral()
-    return seccion
 
 
 def main() -> None:
@@ -413,6 +429,7 @@ def main() -> None:
     seccion = barra_lateral()
     interfaz.encabezado(seccion)
     SECCIONES[seccion]()
+    estado_barra_lateral()
     interfaz.pie_de_pagina()
 
 

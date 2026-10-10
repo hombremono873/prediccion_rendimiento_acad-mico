@@ -1,6 +1,8 @@
 """Estilos visuales, encabezados y créditos de la aplicación."""
 
+import pandas as pd
 import streamlit as st
+from pandas.io.formats.style import Styler
 
 from src import config
 
@@ -71,16 +73,17 @@ ESTILOS = f"""
 
 /* Métricas como tarjetas */
 [data-testid="stMetric"] {{
-    background: {C['superficie']};
-    border: 1px solid {C['borde']};
+    background: {C['superficie_clara']};
+    border: 1px solid {C['borde_claro']};
+    border-left: 4px solid {C['primario']};
     border-radius: 10px;
     padding: 0.8rem 1rem;
 }}
 [data-testid="stMetricLabel"] p {{
-    color: {C['texto_suave']} !important;
+    color: {C['texto_secundario']} !important;
 }}
 [data-testid="stMetricValue"] {{
-    color: {C['acento']} !important;
+    color: {C['primario']} !important;
 }}
 
 /* Marca y créditos de la barra lateral */
@@ -105,15 +108,61 @@ ESTILOS = f"""
     color: {C['acento']};
 }}
 .pie {{
-    border-top: 1px solid {C['borde']};
-    color: {C['texto_suave']};
+    border-top: 1px solid {C['borde_claro']};
+    color: {C['texto_secundario']};
     font-size: 0.85rem;
     margin-top: 3rem;
     padding-top: 1rem;
     text-align: center;
 }}
 .pie strong {{
-    color: {C['texto']};
+    color: {C['texto_oscuro']};
+}}
+
+/* Barras de desplazamiento visibles en azul (tablas incluidas) */
+::-webkit-scrollbar {{
+    width: 10px;
+    height: 10px;
+}}
+::-webkit-scrollbar-track {{
+    background: {C['superficie_clara']};
+}}
+::-webkit-scrollbar-thumb {{
+    background: {C['primario']};
+    border-radius: 6px;
+    border: 2px solid {C['superficie_clara']};
+}}
+::-webkit-scrollbar-thumb:hover {{
+    background: {C['acento']};
+}}
+* {{
+    scrollbar-color: {C['primario']} {C['superficie_clara']};
+}}
+[data-testid="stDataFrame"] {{
+    border: 1px solid {C['borde_claro']};
+    border-radius: 8px;
+}}
+
+/* Control deslizante más fácil de agarrar (mismos colores del tema).
+   Los márgenes negativos mantienen el pulgar centrado sobre la pista al agrandarlo. */
+[data-testid="stSlider"] [role="slider"] {{
+    width: {config.TAMANO_PULGAR_SLIDER}px !important;
+    height: {config.TAMANO_PULGAR_SLIDER}px !important;
+    margin-left: -{(config.TAMANO_PULGAR_SLIDER - 12) // 2}px;
+    margin-top: {config.AJUSTE_VERTICAL_PULGAR}px;
+    cursor: grab !important;
+}}
+[data-testid="stSlider"] [role="slider"]:active {{
+    cursor: grabbing !important;
+}}
+[data-testid="stSlider"] div:has(> [role="slider"]) {{
+    height: {config.ALTO_PISTA_SLIDER}px !important;
+    border-radius: {config.ALTO_PISTA_SLIDER}px;
+}}
+[data-testid="stSlider"] div:has(> div > [role="slider"]) {{
+    padding-top: 12px !important;
+    padding-bottom: 12px !important;
+    cursor: pointer;
 }}
 </style>
 """
@@ -144,6 +193,23 @@ def encabezado(seccion: str) -> None:
         f'<h1>{titulo}</h1><p>{config.DESCRIPCIONES_SECCIONES[seccion]}</p></div>',
         unsafe_allow_html=True,
     )
+
+
+def tabla(datos: pd.DataFrame | Styler, ocultar_indice: bool = False) -> None:
+    """Muestra una tabla completa con scroll vertical y horizontal cuando no cabe.
+
+    Las tablas pequeñas se muestran enteras; las grandes se limitan a
+    config.ALTO_MAX_TABLA píxeles y se recorren con las barras de desplazamiento.
+
+    Args:
+        datos (pd.DataFrame | Styler): Tabla a mostrar, con o sin formato.
+        ocultar_indice (bool): Si es True, no muestra la columna de índice.
+    """
+    filas = len(datos.data if isinstance(datos, Styler) else datos)
+    alto = min(config.ALTO_FILA_TABLA * (filas + 1) + 3, config.ALTO_MAX_TABLA)
+    st.caption(f"{filas:,} filas · desplázate dentro de la tabla para ver todas las filas y columnas"
+               if alto == config.ALTO_MAX_TABLA else f"{filas:,} filas")
+    st.dataframe(datos, hide_index=ocultar_indice, use_container_width=True, height=alto)
 
 
 def etiqueta_seccion(seccion: str) -> str:
