@@ -45,7 +45,7 @@ Cada sección de la barra lateral depende de la anterior; si falta un paso, la a
 | 1. Carga de datos | Carga `data/train.csv` o un CSV subido; muestra filas, columnas, tipos y una vista previa. |
 | 2. Verificación y limpieza | Revisa nulos y duplicados y los elimina, traduce columnas y categorías al español, elimina `id` e `id_estudiante`, crea dummies de `genero` (`drop_first=True`) y muestra las estadísticas descriptivas (`describe()`). |
 | 3. División de datos | Divide en entrenamiento y prueba con el porcentaje que elija el usuario (10 % a 50 %, 20 % por defecto, semilla 42), guarda `data/procesado.csv` y permite descargarlo. |
-| 4. Análisis exploratorio | Pestañas: **Distribuciones** (histogramas, con curva KDE solo en variables continuas); **Tendencia central y atípicos** (media, mediana, moda, asimetría, curtosis, atípicos por IQR y diagramas de caja estandarizados, que justifican el uso de `StandardScaler`); **Mapa de calor** (correlación de Pearson o Spearman); **Relación con el objetivo** (Pearson, Spearman e información mutua). Usa solo el conjunto de entrenamiento. |
+| 4. Análisis exploratorio | Pestañas: **Distribuciones** (histogramas, con curva KDE solo en variables continuas); **Tendencia central y atípicos** (media, mediana, moda, asimetría, curtosis, atípicos por IQR y diagramas de caja estandarizados, que justifican el uso de `StandardScaler`); **Mapa de calor** (correlación de Pearson o Spearman); **Relación con el objetivo** (Pearson, Spearman e información mutua); **Datos sintéticos** (evidencia de que los datos son sintéticos y reconstrucción de la ecuación exacta que generó el objetivo). Usa solo el conjunto de entrenamiento, salvo la pestaña Datos sintéticos, que usa el dataset completo. |
 | 5. Selección de variables | Modo "Variables seleccionadas" (6 por defecto, editables) o "Todas las variables", más una lista de variables a eliminar. Cambiar la selección descarta el modelo entrenado. |
 | 6. Entrenamiento | Pipeline `StandardScaler` + `LinearRegression`, validación cruzada KFold (5), métricas, coeficientes y gráficos de real vs. predicho, coeficientes y residuos. Guarda `models/modelo.joblib`. |
 | 7. Predicción | Formulario generado a partir de las variables del modelo (mínimo, máximo y mediana de entrenamiento) y predicción por lotes desde un CSV, que se descarga con las columnas `id` y `productivity_score`. |
@@ -70,7 +70,7 @@ models/             Modelo entrenado
 
 **Omar Alberto Torres**, Ingeniero de Sistemas, estudiante de la Maestría en Análisis de Datos y Sistemas Inteligentes de la Universidad Santo Tomás.
 
-Al abrir la aplicación se muestra una pantalla de presentación animada con los créditos del autor y de los datos, que se cierra sola.
+Al abrir la aplicación se muestra una pantalla de presentación animada con los créditos del autor y de los datos; se cierra sola a los 12 s o antes con el botón «Entrar a la aplicación» o un clic fuera del panel.
 
 ## Créditos de los datos
 
@@ -78,4 +78,12 @@ Datos de Kaggle: [Student Performance Prediction (Machine Learning Challenge)](h
 
 ## Nota sobre los resultados
 
-El dataset es sintético: `puntaje_productividad` es una combinación lineal de seis variables redondeada a dos decimales. Por eso la regresión lineal obtiene R² ≈ 1 y un error cercano al del redondeo (MAE ≈ 0.0025), y las demás variables reciben coeficientes prácticamente nulos.
+El dataset es sintético. Todas las variables tienen distribución uniforme (curtosis ≈ −1.2) y son independientes entre sí; las diez que no son relevantes (nueve numéricas y el género) no son agregados de las seis relevantes, sino ruido (R² ≈ 0 al predecirlas a partir de ellas). El objetivo se generó con esta fórmula, que reproduce exactamente las 16 000 filas:
+
+```
+bruto = 8·horas_estudio_por_dia + 0.6·puntaje_enfoque + 5·horas_sueno
+        − 3·horas_uso_telefono − 2·nivel_estres + 0.3·porcentaje_asistencia
+puntaje_productividad = round(100 · (bruto − 11.563) / (196.903 − 11.563), 2)
+```
+
+donde 11.563 y 196.903 son el mínimo y el máximo del puntaje bruto. Por eso la regresión lineal obtiene R² ≈ 1, y lo que no explica tiene la desviación teórica del redondeo a dos decimales (0.01/√12 ≈ 0.0029). La pestaña **Datos sintéticos** deduce y verifica esta fórmula a partir de los datos.

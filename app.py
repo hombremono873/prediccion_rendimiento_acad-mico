@@ -1,5 +1,6 @@
 """Aplicación Streamlit: preparación, análisis, entrenamiento y predicción de la productividad estudiantil."""
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -308,6 +309,103 @@ def pestana_relacion_objetivo(X: pd.DataFrame, y: pd.Series) -> None:
     st.plotly_chart(graficos.barras_informacion_mutua(tabla), use_container_width=True)
 
 
+def pestana_datos_sinteticos(datos: pd.DataFrame) -> None:
+    """Explica cómo se generó puntaje_productividad y qué implica para predecirlo.
+
+    Args:
+        datos (pd.DataFrame): Dataset completo ya limpio y codificado.
+    """
+    relevantes = [v for v in config.VARIABLES_POR_DEFECTO if v in datos.columns]
+    if len(relevantes) < 2:
+        st.info("El dataset no contiene las variables relevantes del dataset de Kaggle.")
+        return
+    otras = [c for c in datos.columns if c not in relevantes and c != config.OBJETIVO]
+    # Las dummies de una misma categórica cuentan como una sola variable original
+    n_otras = len({next((cat for cat in config.COLUMNAS_CATEGORICAS if c.startswith(f"{cat}_")), c)
+                   for c in otras})
+    st.info(f"**En pocas palabras:** `{config.OBJETIVO}` no se midió en estudiantes reales: se calculó "
+            f"con una fórmula a partir de solo {len(relevantes)} variables. Por eso el modelo puede "
+            "predecirlo casi sin error.")
+    st.caption("Esta pestaña usa el dataset completo porque describe cómo se crearon los datos; "
+               "no interviene en el entrenamiento del modelo.")
+
+    st.subheader("1. ¿Cómo se generaron las variables?")
+    numericas = [c for c in datos.columns if c != config.OBJETIVO and not analisis.es_binaria(datos[c])]
+    curtosis = datos[numericas].kurt()
+    st.markdown(
+        "Cada variable se generó **al azar**: todos los valores de su rango son igual de probables "
+        "(distribución uniforme), sin valores típicos ni extremos. En datos reales sobre personas "
+        "esto casi nunca ocurre.")
+    st.caption(f"Prueba: la curtosis de las {len(numericas)} variables numéricas está entre "
+               f"{curtosis.min():.2f} y {curtosis.max():.2f}, y la de una distribución uniforme es "
+               f"{config.CURTOSIS_UNIFORME}.")
+
+    st.subheader("2. ¿Qué variables influyen en la productividad?")
+    st.markdown(f"Solo {len(relevantes)}: **{', '.join(relevantes)}**.")
+    st.markdown(
+        f"Las otras {n_otras} no influyen en el puntaje y **tampoco se calcularon a partir de esas "
+        f"{len(relevantes)}** (por ejemplo, como sumas o promedios). Para comprobarlo se intentó "
+        f"predecir cada una usando las {len(relevantes)} relevantes:")
+    dependencia = analisis.tabla_dependencia(datos, relevantes).rename(columns={
+        "|r| máximo con las relevantes": "Correlación máxima (0 a 1)",
+        "R² lineal (validación cruzada)": "R² (0 = no se puede predecir)",
+    })
+    interfaz.tabla(dependencia.style.format(precision=4), ocultar_indice=True)
+    r_max = dependencia["Correlación máxima (0 a 1)"].max()
+    r2_max = dependencia["R² (0 = no se puede predecir)"].max()
+    if r_max < config.UMBRAL_CORRELACION_INDEPENDENCIA and r2_max < config.UMBRAL_R2_INDEPENDENCIA:
+        st.success(
+            f"Ninguna se puede predecir con las {len(relevantes)} relevantes (R² ≈ 0 y correlaciones "
+            f"de {r_max:.2f} como máximo, que son puro azar). Son **ruido**: variables de relleno para "
+            "comprobar si el modelo sabe ignorarlas. Para predecir el puntaje se pueden descartar.")
+    else:
+        st.warning("Alguna de estas variables sí depende de las relevantes; revisa la tabla.")
+
+    st.subheader(f"3. La fórmula de {config.OBJETIVO}")
+    ec = analisis.ecuacion_generadora(datos, relevantes)
+    objetivo = interfaz.latex_variable(config.OBJETIVO)
+    if ec["pesos"] is None:
+        st.info("No se encontró una fórmula con pesos simples; se muestra solo la ecuación de la regresión.")
+    else:
+        st.markdown("**Paso 1.** Se suma cada variable multiplicada por un peso. Los pesos negativos "
+                    "restan productividad:")
+        st.latex(r"\begin{aligned}\text{bruto} &=" + interfaz.latex_combinacion(ec["pesos"]) + r"\end{aligned}")
+        st.markdown(f"**Paso 2.** Ese resultado se lleva a una escala de {ec['y_min']:g} a {ec['y_max']:g} "
+                    f"y se redondea a {config.DECIMALES_OBJETIVO} decimales:")
+        desplazamiento = f"{ec['y_min']:g} + " if ec["y_min"] else ""
+        st.latex(rf"{objetivo} = \operatorname{{round}}\left({desplazamiento}{ec['y_max'] - ec['y_min']:g}"
+                 rf"\cdot\frac{{\text{{bruto}} - {ec['minimo']:.6g}}}{{{ec['maximo']:.6g} - {ec['minimo']:.6g}}},"
+                 rf"\ {config.DECIMALES_OBJETIVO}\right)")
+        mitad = ", ".join(f"{p:g} → {p / 2:g}" for p in ec["pesos"])
+        st.caption(f"{ec['minimo']:.6g} y {ec['maximo']:.6g} son el valor más bajo y el más alto del paso 1 "
+                   f"en el dataset: el estudiante con el más bajo obtiene {ec['y_min']:g} y el del más alto "
+                   f"{ec['y_max']:g}. Los pesos pueden escribirse a otra escala, por ejemplo todos a la mitad "
+                   f"({mitad}); el paso 2 lo compensa y el puntaje final es el mismo.")
+        c1, c2 = st.columns(2)
+        c1.metric("Estudiantes cuyo puntaje reproduce la fórmula", f"{ec['coincidencia']:.2%}")
+        c2.metric("Mayor diferencia encontrada", f"{ec['error_maximo']:.2f}")
+
+    st.markdown("Los dos pasos juntos equivalen a esta ecuación, que es **la que aprende la regresión lineal**:")
+    intercepto = ec["intercepto"]
+    st.latex(rf"\begin{{aligned}}\widehat{{{objetivo}}} &=" + interfaz.latex_combinacion(ec["coeficientes"], ".4f")
+             + rf" {'-' if intercepto < 0 else '+'} {abs(intercepto):.4f}\end{{aligned}}")
+
+    st.subheader("4. ¿Qué significa para la predicción?")
+    paso_redondeo = 10 ** -config.DECIMALES_OBJETIVO
+    minimo_pred, maximo_pred = config.RANGO_PREDICCION
+    st.markdown(
+        f"- **El modelo aprende la fórmula real.** Por eso obtiene R² ≈ 1: con las {len(relevantes)} "
+        "variables relevantes, el puntaje se predice prácticamente perfecto.\n"
+        f"- **El único error que queda es el redondeo** a {config.DECIMALES_OBJETIVO} decimales "
+        f"(como máximo ±{paso_redondeo / 2:g} puntos), que ningún modelo puede adivinar.\n"
+        f"- **Las otras {n_otras} variables no aportan nada.** Incluirlas no mejora la predicción.\n"
+        "- **Para un estudiante nuevo** con valores fuera de los rangos del dataset, la predicción se "
+        f"limita a {minimo_pred:g}–{maximo_pred:g}.")
+    st.caption(f"Comprobación del redondeo: lo que la regresión no explica tiene una desviación de "
+               f"{ec['desviacion_residuo']:.5f}, y la teórica del redondeo es {paso_redondeo:g}/√12 = "
+               f"{paso_redondeo / np.sqrt(12):.5f}.")
+
+
 def render_analisis() -> None:
     """Explora distribuciones, tendencia central, atípicos y correlaciones en pestañas."""
     if not requerir("division", config.SECCION_DIVISION):
@@ -316,7 +414,7 @@ def render_analisis() -> None:
     datos = pd.concat([X, y], axis=1)
     st.caption("El análisis usa solo el conjunto de entrenamiento.")
 
-    distribuciones, tendencia, calor, relacion = st.tabs(config.PESTANAS_ANALISIS)
+    distribuciones, tendencia, calor, relacion, sinteticos = st.tabs(config.PESTANAS_ANALISIS)
     with distribuciones:
         pestana_distribuciones(datos)
     with tendencia:
@@ -325,6 +423,8 @@ def render_analisis() -> None:
         pestana_mapa_calor(datos)
     with relacion:
         pestana_relacion_objetivo(X, y)
+    with sinteticos:
+        pestana_datos_sinteticos(ss["transformacion"]["datos"])
 
 
 # ================= 5. SELECCIÓN =================

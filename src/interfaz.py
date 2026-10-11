@@ -147,6 +147,15 @@ ESTILOS = f"""
 * {{
     scrollbar-color: {C['primario']} {C['superficie_clara']};
 }}
+/* Ecuaciones: desplazamiento horizontal si no caben y letra menor en pantallas estrechas */
+.katex-display {{
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.2rem 0;
+}}
+@media (max-width: 600px) {{
+    .katex-display {{ font-size: 0.68em; }}
+}}
 [data-testid="stDataFrame"] {{
     border: 1px solid {C['borde_claro']};
     border-radius: 8px;
@@ -219,6 +228,37 @@ def tabla(datos: pd.DataFrame | Styler, ocultar_indice: bool = False) -> None:
     st.caption(f"{filas:,} filas · desplázate dentro de la tabla para ver todas las filas y columnas"
                if alto == config.ALTO_MAX_TABLA else f"{filas:,} filas")
     st.dataframe(datos, hide_index=ocultar_indice, use_container_width=True, height=alto)
+
+
+def latex_variable(nombre: str) -> str:
+    """Escribe el nombre de una variable como texto LaTeX.
+
+    Args:
+        nombre (str): Nombre de la variable.
+
+    Returns:
+        str: Nombre con los guiones bajos escapados.
+    """
+    return r"\text{" + nombre.replace("_", r"\_") + "}"
+
+
+def latex_combinacion(coeficientes: pd.Series, formato: str = "g", terminos_por_linea: int = 2) -> str:
+    """Escribe una combinación lineal en LaTeX, partida en líneas para que quepa en móvil.
+
+    Args:
+        coeficientes (pd.Series): Coeficiente de cada variable (índice = nombre).
+        formato (str): Formato numérico de los coeficientes.
+        terminos_por_linea (int): Términos por línea.
+
+    Returns:
+        str: Contenido para un entorno aligned (sin el lado izquierdo).
+    """
+    partes = []
+    for i, (nombre, valor) in enumerate(coeficientes.items()):
+        signo = "-" if valor < 0 else ("+" if i else "")
+        salto = r" \\ &\quad " if i and i % terminos_por_linea == 0 else " "
+        partes.append(f"{salto}{signo} {abs(valor):{formato}} " + r"\cdot " + latex_variable(nombre))
+    return "".join(partes)
 
 
 def etiqueta_seccion(seccion: str) -> str:
@@ -353,7 +393,9 @@ def pantalla_presentacion() -> None:
     """Muestra una vez por sesión la presentación animada con los créditos.
 
     Es una capa fija a pantalla completa, solo HTML y CSS, que se desvanece sola y deja de
-    capturar clics, dejando la aplicación lista debajo.
+    capturar clics, dejando la aplicación lista debajo. Se puede cerrar antes con el botón,
+    con un clic fuera del panel o con la barra espaciadora: todos marcan una casilla oculta
+    que, con el selector :checked, adelanta el desvanecimiento.
     """
     if st.session_state.get("presentacion_mostrada"):
         return
@@ -371,6 +413,8 @@ def pantalla_presentacion() -> None:
         f'{enlace_fuente_datos(config.FUENTE_DATOS)}<br>'
         f'<span class="url">{config.URL_FUENTE_DATOS.removeprefix("https://")}</span></p>',
         f'<p class="pequeno">Puesta en servicio: <strong>{config.FECHA_PUESTA_EN_SERVICIO}</strong></p>',
+        '<label for="cerrar-presentacion" class="boton-entrar">Entrar a la aplicación</label>'
+        f'<p class="aviso">o haz clic fuera del panel · se cierra sola en {salida:g} s</p>',
     ]
     contenido = "".join(
         f'<div class="linea" style="animation-delay:{0.1 + i * config.RETRASO_LINEAS_PRESENTACION:.2f}s">'
@@ -388,7 +432,21 @@ def pantalla_presentacion() -> None:
     background: {C['fondo']} url("data:image/svg+xml;base64,{fondo}") center / cover no-repeat;
     animation: salir-presentacion {duracion}s ease-in {salida}s forwards;
 }}
+#cerrar-presentacion {{
+    position: fixed;
+    opacity: 0;
+    pointer-events: none;
+}}
+#cerrar-presentacion:checked ~ #presentacion {{
+    animation: salir-presentacion {config.DURACION_CIERRE_PRESENTACION}s ease-in forwards;
+}}
+#presentacion .fondo-cierre {{
+    position: absolute;
+    inset: 0;
+    cursor: pointer;
+}}
 #presentacion .panel {{
+    position: relative;
     background: {_rgba(C['superficie'], 0.82)};
     backdrop-filter: blur(4px);
     border: 1px solid {C['borde']};
@@ -444,6 +502,26 @@ def pantalla_presentacion() -> None:
 #presentacion .pequeno strong {{ color: {C['texto_claro']}; }}
 #presentacion a {{ color: {C['acento']}; }}
 #presentacion .url {{ font-size: 0.75rem; word-break: break-all; }}
+#presentacion .boton-entrar {{
+    display: inline-block;
+    background: {C['primario']};
+    border-radius: 8px;
+    color: {C['texto_claro']};
+    cursor: pointer;
+    font-weight: 600;
+    margin-top: 1.3rem;
+    padding: 0.6rem 1.4rem;
+    transition: background 0.2s;
+}}
+#presentacion .boton-entrar:hover {{ background: {C['primario_oscuro']}; }}
+#cerrar-presentacion:focus-visible ~ #presentacion .boton-entrar {{
+    outline: 2px solid {C['acento']};
+    outline-offset: 3px;
+}}
+#presentacion .aviso {{
+    color: {C['texto_suave']};
+    font-size: 0.75rem;
+}}
 #presentacion .barra {{
     position: absolute;
     left: 0;
@@ -457,10 +535,11 @@ def pantalla_presentacion() -> None:
 @keyframes llenar-barra {{ to {{ width: 100%; }} }}
 @keyframes salir-presentacion {{ to {{ opacity: 0; visibility: hidden; pointer-events: none; }} }}
 @media (prefers-reduced-motion: reduce) {{
-    #presentacion {{ animation-delay: {config.INICIO_SALIDA_PRESENTACION_REDUCIDA}s; }}
     #presentacion .linea {{ animation: none; opacity: 1; transform: none; }}
-    #presentacion .barra {{ animation-duration: {config.INICIO_SALIDA_PRESENTACION_REDUCIDA}s; }}
 }}
 </style>"""
-    st.markdown(f'{estilos}<div id="presentacion"><div class="panel">{contenido}</div>'
-                f'<div class="barra"></div></div>', unsafe_allow_html=True)
+    st.markdown(f'{estilos}<input type="checkbox" id="cerrar-presentacion" '
+                f'aria-label="Cerrar la presentación"><div id="presentacion">'
+                f'<label for="cerrar-presentacion" class="fondo-cierre"></label>'
+                f'<div class="panel">{contenido}</div><div class="barra"></div></div>',
+                unsafe_allow_html=True)

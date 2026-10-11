@@ -1,9 +1,12 @@
-"""Análisis exploratorio: tendencia central, atípicos, correlaciones y relación con el objetivo."""
+"""Análisis exploratorio: tendencia central, atípicos, correlaciones, relación con el objetivo
+y reconstrucción de la fórmula que generó los datos sintéticos."""
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 from sklearn.feature_selection import mutual_info_regression
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import cross_val_score
 
 from src import config
 
@@ -154,3 +157,93 @@ def matriz_correlacion(datos: pd.DataFrame, metodo: str) -> pd.DataFrame:
         pd.DataFrame: Matriz cuadrada de correlaciones.
     """
     return datos.corr(method=metodo)
+
+
+@st.cache_data(show_spinner="Comprobando si las demás variables dependen de las relevantes...")
+def tabla_dependencia(datos: pd.DataFrame, relevantes: list[str]) -> pd.DataFrame:
+    """Mide cuánto se puede explicar cada variable no relevante a partir de las relevantes.
+
+    Si una variable fuera un agregado (suma, promedio, cociente...) de las relevantes,
+    tendría una correlación, un R² o una información mutua altos.
+
+    Args:
+        datos (pd.DataFrame): Dataset con predictores y objetivo.
+        relevantes (list[str]): Variables que explican el objetivo.
+
+    Returns:
+        pd.DataFrame: Una fila por variable no relevante.
+    """
+    X = datos[relevantes]
+    otras = [c for c in datos.columns if c not in relevantes and c != config.OBJETIVO]
+    filas = []
+    for nombre in otras:
+        y = datos[nombre]
+        filas.append({
+            "Variable": nombre,
+            "|r| máximo con las relevantes": X.corrwith(y).abs().max(),
+            "R² lineal (validación cruzada)": cross_val_score(
+                LinearRegression(), X, y, cv=config.N_PARTICIONES, scoring="r2").mean(),
+            "Información mutua total": mutual_info_regression(X, y, random_state=config.SEMILLA).sum(),
+        })
+    return pd.DataFrame(filas)
+
+
+def pesos_simples(coeficientes: pd.Series) -> pd.Series | None:
+    """Busca la escala que convierte los coeficientes en pesos "redondos".
+
+    Una normalización min-max multiplica todos los pesos originales por el mismo factor, así
+    que se prueba como peso del coeficiente más pequeño cada múltiplo de PASO_PESOS y se
+    acepta el primero que deja a todos los demás sobre la rejilla de PASO_PESOS.
+
+    Args:
+        coeficientes (pd.Series): Coeficientes de la regresión en unidades originales.
+
+    Returns:
+        pd.Series | None: Pesos simples, o None si no se encuentran.
+    """
+    minimo = coeficientes.abs().min()
+    if minimo == 0:
+        return None
+    paso = config.PASO_PESOS
+    for multiplo in range(1, round(config.MAX_PESO_MINIMO / paso) + 1):
+        pesos = coeficientes / (minimo / (multiplo * paso))
+        rejilla = (pesos / paso).round() * paso
+        if (pesos - rejilla).abs().max() <= config.TOLERANCIA_PESOS:
+            return rejilla.round(6)
+    return None
+
+
+@st.cache_data(show_spinner="Reconstruyendo la ecuación que generó los datos...")
+def ecuacion_generadora(datos: pd.DataFrame, relevantes: list[str]) -> dict:
+    """Ajusta el objetivo con las variables relevantes e intenta reconstruir su fórmula exacta.
+
+    Hipótesis: objetivo = min-max(Σ peso·variable) llevado al rango observado del objetivo y
+    redondeado a DECIMALES_OBJETIVO. Se verifica fila por fila.
+
+    Args:
+        datos (pd.DataFrame): Dataset completo con predictores y objetivo.
+        relevantes (list[str]): Variables que explican el objetivo.
+
+    Returns:
+        dict: Intercepto y coeficientes de la regresión, desviación del residuo y, si se
+        encuentra, pesos, mínimo y máximo del puntaje bruto, rango del objetivo,
+        proporción de filas reproducidas exactamente y error máximo.
+    """
+    X, y = datos[relevantes].astype(float), datos[config.OBJETIVO]
+    modelo = LinearRegression().fit(X, y)
+    coeficientes = pd.Series(modelo.coef_, index=relevantes)
+    resultado = {"intercepto": float(modelo.intercept_), "coeficientes": coeficientes,
+                 "desviacion_residuo": float((y - modelo.predict(X)).std()), "pesos": None}
+    pesos = pesos_simples(coeficientes)
+    if pesos is None:
+        return resultado
+
+    bruto = X @ pesos
+    minimo, maximo = float(bruto.min()), float(bruto.max())
+    y_min, y_max = float(y.min()), float(y.max())
+    escalado = y_min + (y_max - y_min) * (bruto - minimo) / (maximo - minimo)
+    reconstruido = escalado.round(config.DECIMALES_OBJETIVO)
+    error = (reconstruido - y).abs()
+    resultado.update(pesos=pesos, minimo=minimo, maximo=maximo, y_min=y_min, y_max=y_max,
+                     coincidencia=float((error < 1e-9).mean()), error_maximo=float(error.max()))
+    return resultado
