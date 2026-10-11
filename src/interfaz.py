@@ -1,5 +1,8 @@
-"""Estilos visuales, encabezados y créditos de la aplicación."""
+"""Estilos visuales, pantalla de presentación, encabezados y créditos de la aplicación."""
 
+import base64
+
+import numpy as np
 import pandas as pd
 import streamlit as st
 from pandas.io.formats.style import Styler
@@ -106,6 +109,12 @@ ESTILOS = f"""
 }}
 .creditos strong {{
     color: {C['acento']};
+}}
+.creditos a {{
+    color: {C['acento']} !important;
+}}
+.pie a {{
+    color: {C['primario']};
 }}
 .pie {{
     border-top: 1px solid {C['borde_claro']};
@@ -238,19 +247,220 @@ def estado_pasos(pasos: dict[str, bool]) -> None:
     st.sidebar.markdown(filas, unsafe_allow_html=True)
 
 
+def enlace_fuente_datos(texto: str) -> str:
+    """Construye el enlace a los datos de Kaggle que se abre en otra pestaña.
+
+    Args:
+        texto (str): Texto visible del enlace.
+
+    Returns:
+        str: Etiqueta HTML del enlace.
+    """
+    return f'<a href="{config.URL_FUENTE_DATOS}" target="_blank" rel="noopener noreferrer">{texto}</a>'
+
+
 def creditos_barra_lateral() -> None:
-    """Muestra los créditos del autor al final de la barra lateral."""
+    """Muestra los créditos del autor y de los datos al final de la barra lateral."""
     st.sidebar.markdown(
         f'<div class="creditos">Desarrollado por<br><strong>{config.AUTOR}</strong><br>'
-        f'{config.AUTOR_DESCRIPCION}</div>',
+        f'{config.AUTOR_PROFESION}<br>{config.AUTOR_DESCRIPCION}<br>{config.UNIVERSIDAD}'
+        f'<br><br>Datos: {enlace_fuente_datos("Kaggle")}</div>',
         unsafe_allow_html=True,
     )
 
 
 def pie_de_pagina() -> None:
-    """Muestra los créditos del autor al pie de la página."""
+    """Muestra los créditos del autor y de los datos al pie de la página."""
     st.markdown(
-        f'<div class="pie">Desarrollado por <strong>{config.AUTOR}</strong> · '
-        f'{config.AUTOR_DESCRIPCION}</div>',
+        f'<div class="pie">Desarrollado por <strong>{config.AUTOR}</strong> · {config.AUTOR_PROFESION} · '
+        f'{config.AUTOR_DESCRIPCION}, {config.UNIVERSIDAD}<br>'
+        f'Datos: {enlace_fuente_datos(config.FUENTE_DATOS)}</div>',
         unsafe_allow_html=True,
     )
+
+
+# ================= PANTALLA DE PRESENTACIÓN =================
+def _rgba(color_hex: str, opacidad: float) -> str:
+    """Convierte un color hexadecimal en rgba con la opacidad indicada.
+
+    Args:
+        color_hex (str): Color en formato #RRGGBB.
+        opacidad (float): Opacidad entre 0 y 1.
+
+    Returns:
+        str: Color en formato rgba(r, g, b, a).
+    """
+    r, g, b = (int(color_hex[i:i + 2], 16) for i in (1, 3, 5))
+    return f"rgba({r}, {g}, {b}, {opacidad})"
+
+
+def svg_fondo_presentacion() -> str:
+    """Genera el fondo minimalista de la presentación con los colores de la aplicación.
+
+    Combina una rejilla tenue, una nube de puntos con su recta de regresión (el modelo del
+    proyecto) y una red neuronal de tres capas (aprendizaje automático). Las líneas se dibujan
+    solas y los nodos laten; las animaciones se desactivan con "reducir movimiento".
+
+    Returns:
+        str: Documento SVG.
+    """
+    ancho, alto = 1600, 900
+    rejilla = "".join(f'<line x1="{x}" y1="0" x2="{x}" y2="{alto}"/>' for x in range(0, ancho + 1, 80))
+    rejilla += "".join(f'<line x1="0" y1="{y}" x2="{ancho}" y2="{y}"/>' for y in range(0, alto + 1, 80))
+
+    # Nube de puntos alrededor de una recta descendente en la mitad izquierda
+    rng = np.random.default_rng(config.SEMILLA)
+    xs = rng.uniform(110, 480, 40)
+    ys = 720 - 0.75 * (xs - 110) + rng.normal(0, 38, xs.size)
+    puntos = "".join(f'<circle cx="{x:.0f}" cy="{y:.0f}" r="4"/>' for x, y in zip(xs, ys))
+
+    # Red neuronal en la mitad derecha
+    capas = [(1180, 4), (1330, 5), (1480, 3)]
+    nodos = [[(x, 450 + (i - (n - 1) / 2) * 95) for i in range(n)] for x, n in capas]
+    conexiones, k = "", 0
+    for origen, destino in zip(nodos, nodos[1:]):
+        for x1, y1 in origen:
+            for x2, y2 in destino:
+                conexiones += (f'<line class="trazo" pathLength="1" style="animation-delay:{0.2 + 0.03 * k:.2f}s" '
+                               f'x1="{x1}" y1="{y1:.0f}" x2="{x2}" y2="{y2:.0f}"/>')
+                k += 1
+    circulos = "".join(f'<circle class="nodo" style="animation-delay:{0.15 * i:.2f}s" cx="{x}" cy="{y:.0f}" r="11"/>'
+                       for i, (x, y) in enumerate(p for capa in nodos for p in capa))
+
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {ancho} {alto}" '
+        f'preserveAspectRatio="xMidYMid slice">'
+        f'<style>'
+        f'.trazo{{stroke-dasharray:1;stroke-dashoffset:1;animation:dibujar 1.4s ease-out forwards}}'
+        f'.nodo{{animation:latir 2.4s ease-in-out infinite}}'
+        f'@keyframes dibujar{{to{{stroke-dashoffset:0}}}}'
+        f'@keyframes latir{{0%,100%{{opacity:.45}}50%{{opacity:1}}}}'
+        f'@media (prefers-reduced-motion:reduce){{.trazo{{animation:none;stroke-dashoffset:0}}'
+        f'.nodo{{animation:none;opacity:.8}}}}'
+        f'</style>'
+        f'<rect width="{ancho}" height="{alto}" fill="{C["fondo"]}"/>'
+        f'<g stroke="{C["borde"]}" stroke-width="1" opacity="0.6">{rejilla}</g>'
+        f'<g fill="{C["texto_suave"]}" opacity="0.3">{puntos}</g>'
+        f'<line class="trazo" pathLength="1" x1="90" y1="735" x2="500" y2="428" '
+        f'stroke="{C["referencia"]}" stroke-width="3" stroke-linecap="round" opacity="0.55"/>'
+        f'<g stroke="{C["primario"]}" stroke-width="1.5" opacity="0.35">{conexiones}</g>'
+        f'<g fill="{C["fondo"]}" stroke="{C["acento"]}" stroke-width="2.5">{circulos}</g>'
+        f'</svg>'
+    )
+
+
+def pantalla_presentacion() -> None:
+    """Muestra una vez por sesión la presentación animada con los créditos.
+
+    Es una capa fija a pantalla completa, solo HTML y CSS, que se desvanece sola y deja de
+    capturar clics, dejando la aplicación lista debajo.
+    """
+    if st.session_state.get("presentacion_mostrada"):
+        return
+    st.session_state["presentacion_mostrada"] = True
+
+    fondo = base64.b64encode(svg_fondo_presentacion().encode("utf-8")).decode("ascii")
+    salida, duracion = config.INICIO_SALIDA_PRESENTACION, config.DURACION_SALIDA_PRESENTACION
+    lineas = [
+        '<div class="icono">📊</div>',
+        f'<div class="nombre">{config.AUTOR}</div>',
+        f'<div class="profesion">{config.AUTOR_PROFESION}</div>',
+        f'<p>{config.AUTOR_DESCRIPCION}</p>',
+        f'<p class="universidad">{config.UNIVERSIDAD}</p>',
+        f'<div class="separador"></div><p class="pequeno">Datos: '
+        f'{enlace_fuente_datos(config.FUENTE_DATOS)}<br>'
+        f'<span class="url">{config.URL_FUENTE_DATOS.removeprefix("https://")}</span></p>',
+        f'<p class="pequeno">Puesta en servicio: <strong>{config.FECHA_PUESTA_EN_SERVICIO}</strong></p>',
+    ]
+    contenido = "".join(
+        f'<div class="linea" style="animation-delay:{0.1 + i * config.RETRASO_LINEAS_PRESENTACION:.2f}s">'
+        f'{linea}</div>' for i, linea in enumerate(lineas))
+
+    estilos = f"""<style>
+#presentacion {{
+    position: fixed;
+    inset: 0;
+    z-index: 1000000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: {C['fondo']} url("data:image/svg+xml;base64,{fondo}") center / cover no-repeat;
+    animation: salir-presentacion {duracion}s ease-in {salida}s forwards;
+}}
+#presentacion .panel {{
+    background: {_rgba(C['superficie'], 0.82)};
+    backdrop-filter: blur(4px);
+    border: 1px solid {C['borde']};
+    border-top: 3px solid {C['primario']};
+    border-radius: 16px;
+    box-shadow: 0 20px 60px {_rgba(C['fondo'], 0.6)};
+    color: {C['texto']};
+    box-sizing: border-box;
+    max-width: 580px;
+    width: 100%;
+    padding: 2.2rem 2.5rem;
+    text-align: center;
+}}
+@media (max-width: 600px) {{
+    #presentacion .panel {{ padding: 1.6rem 1.2rem; }}
+    #presentacion .nombre {{ font-size: 1.6rem; }}
+}}
+#presentacion .linea {{
+    opacity: 0;
+    transform: translateY(14px);
+    animation: entrar-linea 0.6s ease-out forwards;
+}}
+#presentacion .icono {{ font-size: 2.4rem; }}
+#presentacion .nombre {{
+    color: {C['texto_claro']};
+    font-size: 2.1rem;
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 0.3rem 0 0.4rem 0;
+}}
+#presentacion .profesion {{
+    color: {C['acento']};
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}}
+#presentacion p {{ margin: 0.6rem 0 0 0; }}
+#presentacion .universidad {{
+    color: {C['texto_claro']};
+    font-weight: 700;
+    margin-top: 0.2rem;
+}}
+#presentacion .separador {{
+    border-top: 1px solid {C['borde']};
+    margin: 1.2rem auto 0 auto;
+    width: 60%;
+}}
+#presentacion .pequeno {{
+    color: {C['texto_suave']};
+    font-size: 0.85rem;
+}}
+#presentacion .pequeno strong {{ color: {C['texto_claro']}; }}
+#presentacion a {{ color: {C['acento']}; }}
+#presentacion .url {{ font-size: 0.75rem; word-break: break-all; }}
+#presentacion .barra {{
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 4px;
+    width: 0;
+    background: linear-gradient(90deg, {C['primario']}, {C['acento']});
+    animation: llenar-barra {salida}s linear forwards;
+}}
+@keyframes entrar-linea {{ to {{ opacity: 1; transform: none; }} }}
+@keyframes llenar-barra {{ to {{ width: 100%; }} }}
+@keyframes salir-presentacion {{ to {{ opacity: 0; visibility: hidden; pointer-events: none; }} }}
+@media (prefers-reduced-motion: reduce) {{
+    #presentacion {{ animation-delay: {config.INICIO_SALIDA_PRESENTACION_REDUCIDA}s; }}
+    #presentacion .linea {{ animation: none; opacity: 1; transform: none; }}
+    #presentacion .barra {{ animation-duration: {config.INICIO_SALIDA_PRESENTACION_REDUCIDA}s; }}
+}}
+</style>"""
+    st.markdown(f'{estilos}<div id="presentacion"><div class="panel">{contenido}</div>'
+                f'<div class="barra"></div></div>', unsafe_allow_html=True)

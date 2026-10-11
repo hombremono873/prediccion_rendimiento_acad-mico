@@ -1,6 +1,6 @@
 # Predicción de la productividad estudiantil
 
-Aplicación en Streamlit que recorre el flujo completo de un proyecto de regresión sobre el dataset de Kaggle [Student Performance Prediction](https://www.kaggle.com/competitions/student-performance-prediction-machine-learning-challenge/data): extracción, transformación y carga (ETL), análisis de variables, entrenamiento de una regresión lineal y predicción con datos ingresados por el usuario.
+Aplicación en Streamlit que recorre el flujo completo de un proyecto de regresión sobre el dataset de Kaggle [Student Performance Prediction](https://www.kaggle.com/competitions/student-performance-prediction-machine-learning-challenge/data): carga, verificación y limpieza, división de los datos, análisis exploratorio, entrenamiento de una regresión lineal y predicción con datos ingresados por el usuario.
 
 ## Requisitos
 
@@ -68,7 +68,13 @@ models/             Modelo entrenado
 
 ## Autor
 
-**Omar Alberto Torres**, estudiante de la Maestría en Análisis de Datos.
+**Omar Alberto Torres**, Ingeniero de Sistemas, estudiante de la Maestría en Análisis de Datos y Sistemas Inteligentes de la Universidad Santo Tomás.
+
+Al abrir la aplicación se muestra una pantalla de presentación animada con los créditos del autor y de los datos, que se cierra sola.
+
+## Créditos de los datos
+
+Datos de Kaggle: [Student Performance Prediction (Machine Learning Challenge)](https://www.kaggle.com/competitions/student-performance-prediction-machine-learning-challenge/data).
 
 ## Nota sobre los resultados
 

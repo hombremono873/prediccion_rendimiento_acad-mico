@@ -540,6 +540,7 @@ def main() -> None:
     """Punto de entrada de la aplicación."""
     st.set_page_config(page_title=config.TITULO_APP, page_icon="📊", layout="wide")
     interfaz.aplicar_estilos()
+    interfaz.pantalla_presentacion()
     seccion = barra_lateral()
     interfaz.encabezado(seccion)
     SECCIONES[seccion]()

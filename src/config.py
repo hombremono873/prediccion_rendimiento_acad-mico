@@ -97,7 +97,20 @@ PESTANAS_ANALISIS = ["Distribuciones", "Tendencia central y atípicos", "Mapa de
 TITULO_APP = "Productividad estudiantil"
 SUBTITULO_APP = "Regresión lineal sobre hábitos de estudio"
 AUTOR = "Omar Alberto Torres"
-AUTOR_DESCRIPCION = "Estudiante de la Maestría en Análisis de Datos"
+AUTOR_PROFESION = "Ingeniero de Sistemas"
+AUTOR_DESCRIPCION = "Estudiante de la Maestría en Análisis de Datos y Sistemas Inteligentes"
+UNIVERSIDAD = "Universidad Santo Tomás"
+FECHA_PUESTA_EN_SERVICIO = "11 de octubre de 2026"
+FUENTE_DATOS = "Kaggle — Student Performance Prediction (Machine Learning Challenge)"
+URL_FUENTE_DATOS = ("https://www.kaggle.com/competitions/"
+                    "student-performance-prediction-machine-learning-challenge/data")
+
+# Pantalla de presentación (una vez por sesión): segundos hasta que empieza a desvanecerse
+# y duración del desvanecimiento; con "reducir movimiento" activo se acorta la espera
+INICIO_SALIDA_PRESENTACION = 4.7
+DURACION_SALIDA_PRESENTACION = 0.8
+INICIO_SALIDA_PRESENTACION_REDUCIDA = 3.0
+RETRASO_LINEAS_PRESENTACION = 0.4
 
 # Paleta: área principal blanca (debe coincidir con .streamlit/config.toml) y
 # barra lateral y encabezados en negro azulado con acentos azules
