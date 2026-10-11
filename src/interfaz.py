@@ -216,7 +216,7 @@ def etiqueta_seccion(seccion: str) -> str:
     """Escapa el número de la sección para que Markdown no lo convierta en una lista.
 
     Args:
-        seccion (str): Nombre de la sección, por ejemplo "1. Extracción".
+        seccion (str): Nombre de la sección, por ejemplo "1. Carga de datos".
 
     Returns:
         str: Etiqueta lista para mostrarse en el menú.

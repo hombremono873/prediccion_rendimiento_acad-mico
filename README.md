@@ -26,7 +26,7 @@ El repositorio incluye los datos de la [competencia de Kaggle](https://www.kaggl
 - `data/train.csv`: 16 000 estudiantes con la variable objetivo; es el que carga la app por defecto.
 - `data/test.csv`: 4 000 estudiantes sin la variable objetivo; sirve para probar la predicción por lotes.
 
-En la sección **Extracción** también puedes subir otro CSV con la misma estructura.
+En la sección **Carga de datos** también puedes subir otro CSV con la misma estructura.
 
 ## Ejecución
 
@@ -42,10 +42,10 @@ Cada sección de la barra lateral depende de la anterior; si falta un paso, la a
 
 | Sección | Qué hace |
 |---|---|
-| 1. Extracción | Carga `data/train.csv` o un CSV subido; muestra filas, columnas, tipos y una vista previa. |
-| 2. Transformación | Traduce columnas y categorías al español, elimina `id` e `id_estudiante`, elimina nulos y duplicados, y crea dummies de `genero` (`drop_first=True`). |
-| 3. Carga | Divide en entrenamiento y prueba con el porcentaje que elija el usuario (10 % a 50 %, 20 % por defecto, semilla 42), guarda `data/procesado.csv` y permite descargarlo. |
-| 4. Análisis de variables | Histogramas (con curva KDE solo en variables continuas), tabla de Pearson, Spearman e información mutua, y gráfico de información mutua. Usa solo el conjunto de entrenamiento. |
+| 1. Carga de datos | Carga `data/train.csv` o un CSV subido; muestra filas, columnas, tipos y una vista previa. |
+| 2. Verificación y limpieza | Revisa nulos y duplicados y los elimina, traduce columnas y categorías al español, elimina `id` e `id_estudiante`, crea dummies de `genero` (`drop_first=True`) y muestra las estadísticas descriptivas (`describe()`). |
+| 3. División de datos | Divide en entrenamiento y prueba con el porcentaje que elija el usuario (10 % a 50 %, 20 % por defecto, semilla 42), guarda `data/procesado.csv` y permite descargarlo. |
+| 4. Análisis exploratorio | Pestañas: **Distribuciones** (histogramas, con curva KDE solo en variables continuas); **Tendencia central y atípicos** (media, mediana, moda, asimetría, curtosis, atípicos por IQR y diagramas de caja estandarizados, que justifican el uso de `StandardScaler`); **Mapa de calor** (correlación de Pearson o Spearman); **Relación con el objetivo** (Pearson, Spearman e información mutua). Usa solo el conjunto de entrenamiento. |
 | 5. Selección de variables | Modo "Variables seleccionadas" (6 por defecto, editables) o "Todas las variables", más una lista de variables a eliminar. Cambiar la selección descarta el modelo entrenado. |
 | 6. Entrenamiento | Pipeline `StandardScaler` + `LinearRegression`, validación cruzada KFold (5), métricas, coeficientes y gráficos de real vs. predicho, coeficientes y residuos. Guarda `models/modelo.joblib`. |
 | 7. Predicción | Formulario generado a partir de las variables del modelo (mínimo, máximo y mediana de entrenamiento) y predicción por lotes desde un CSV, que se descarga con las columnas `id` y `productivity_score`. |
@@ -56,7 +56,7 @@ Cada sección de la barra lateral depende de la anterior; si falta un paso, la a
 app.py              Punto de entrada, barra lateral y secciones
 src/config.py       Constantes: rutas, traducciones, variables por defecto, semilla
 src/etl.py          Extracción, transformación y carga
-src/analisis.py     Correlaciones e información mutua
+src/analisis.py     Tendencia central, atípicos, correlaciones e información mutua
 src/modelo.py       Pipeline, validación cruzada, métricas y persistencia
 src/prediccion.py   Predicción individual y por lotes
 src/graficos.py     Visualizaciones con plotly

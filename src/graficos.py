@@ -52,8 +52,8 @@ def histograma(serie: pd.Series, discreta: bool) -> go.Figure:
         fig = go.Figure(go.Bar(x=conteo.index, y=conteo.values, marker_color=COLOR_PRINCIPAL))
         return _estilo(fig, titulo, serie.name, "Frecuencia")
 
-    fig = go.Figure(go.Histogram(x=serie, histnorm="probability density", nbinsx=30,
-                                 marker_color=COLOR_PRINCIPAL, opacity=0.75))
+    fig = go.Figure(go.Histogram(x=serie, histnorm="probability density",
+                                 nbinsx=config.CONTENEDORES_HISTOGRAMA, marker_color=COLOR_PRINCIPAL, opacity=0.75))
     if serie.nunique() > 1:
         rejilla = np.linspace(serie.min(), serie.max(), config.PUNTOS_KDE)
         fig.add_trace(go.Scatter(x=rejilla, y=gaussian_kde(serie)(rejilla), mode="lines",
@@ -149,3 +149,42 @@ def residuos(y_real: pd.Series, y_pred: np.ndarray) -> go.Figure:
     fig.add_hline(y=0, line_dash="dash", line_color=COLOR_REFERENCIA)
     return _estilo(fig, "Residuos (prueba)", "Puntaje de productividad predicho",
                    "Residuo (real − predicho)", alto=400)
+
+
+def cajas_estandarizadas(X: pd.DataFrame) -> go.Figure:
+    """Grafica diagramas de caja de los predictores ya estandarizados (como haría StandardScaler).
+
+    Al estar en la misma escala (z) se comparan todas las variables en un solo gráfico y
+    los atípicos aparecen como puntos fuera de los bigotes.
+
+    Args:
+        X (pd.DataFrame): Predictores numéricos no binarios.
+
+    Returns:
+        go.Figure: Diagramas de caja verticales, uno por variable.
+    """
+    z = (X - X.mean()) / X.std(ddof=0)
+    fig = go.Figure([go.Box(y=z[c], name=c, marker_color=COLOR_PRINCIPAL, boxpoints="outliers")
+                     for c in z.columns])
+    fig.add_hline(y=0, line_dash="dash", line_color=COLOR_EJE)
+    return _estilo(fig, "Diagramas de caja de los predictores estandarizados", "Variable",
+                   "Valor estandarizado (z)", alto=450)
+
+
+def mapa_calor(matriz: pd.DataFrame, metodo: str) -> go.Figure:
+    """Grafica una matriz de correlación con los coeficientes anotados en cada celda.
+
+    Args:
+        matriz (pd.DataFrame): Matriz cuadrada de correlaciones.
+        metodo (str): Nombre del método para el título (Pearson o Spearman).
+
+    Returns:
+        go.Figure: Mapa de calor con escala divergente de −1 a 1.
+    """
+    fig = go.Figure(go.Heatmap(
+        z=matriz.values, x=matriz.columns, y=matriz.index, zmin=-1, zmax=1,
+        colorscale=config.ESCALA_MAPA_CALOR, texttemplate="%{z:.2f}", textfont=dict(size=10),
+        hovertemplate="%{y} · %{x}: %{z:.4f}<extra></extra>", colorbar=dict(title="r")))
+    fig.update_yaxes(autorange="reversed")
+    fig.update_xaxes(tickangle=-45)
+    return _estilo(fig, f"Matriz de correlación ({metodo})", "", "", alto=max(500, 38 * len(matriz)))

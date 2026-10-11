@@ -57,7 +57,7 @@ COLUMNA_PREDICCION_DETALLE = "puntaje_productividad_predicho"
 
 # ================= MODELADO =================
 SEMILLA = 42
-# Porcentaje del dataset que se reserva para prueba (el usuario lo elige en la sección Carga)
+# Porcentaje del dataset que se reserva para prueba (el usuario lo elige en la sección División de datos)
 PORCENTAJE_PRUEBA_DEFECTO = 20
 PORCENTAJE_PRUEBA_MIN = 10
 PORCENTAJE_PRUEBA_MAX = 50
@@ -67,24 +67,33 @@ RANGO_PREDICCION = (0.0, 100.0)
 DECIMALES_PREDICCION = 2
 
 # ================= INTERFAZ =================
+SECCION_CARGA = "1. Carga de datos"
+SECCION_VERIFICACION = "2. Verificación y limpieza"
+SECCION_DIVISION = "3. División de datos"
+SECCION_ANALISIS = "4. Análisis exploratorio"
+SECCION_SELECCION = "5. Selección de variables"
+SECCION_ENTRENAMIENTO = "6. Entrenamiento"
+SECCION_PREDICCION = "7. Predicción"
 SECCIONES = [
-    "1. Extracción",
-    "2. Transformación",
-    "3. Carga",
-    "4. Análisis de variables",
-    "5. Selección de variables",
-    "6. Entrenamiento",
-    "7. Predicción",
+    SECCION_CARGA,
+    SECCION_VERIFICACION,
+    SECCION_DIVISION,
+    SECCION_ANALISIS,
+    SECCION_SELECCION,
+    SECCION_ENTRENAMIENTO,
+    SECCION_PREDICCION,
 ]
 DESCRIPCIONES_SECCIONES = dict(zip(SECCIONES, [
     "Carga el dataset de Kaggle o sube tu propio archivo CSV.",
-    "Traduce, limpia y codifica los datos para el modelo.",
+    "Revisa nulos y duplicados, traduce, limpia y codifica los datos, y resume sus estadísticas.",
     "Divide los datos en entrenamiento y prueba, y guarda el dataset procesado.",
-    "Explora las distribuciones y la relación de cada variable con la productividad.",
+    "Explora distribuciones, tendencia central, atípicos y correlaciones de las variables.",
     "Elige las variables con las que se entrenará el modelo.",
     "Entrena la regresión lineal y evalúa su desempeño.",
     "Estima la productividad de un estudiante o de un lote completo.",
 ]))
+PESTANAS_ANALISIS = ["Distribuciones", "Tendencia central y atípicos", "Mapa de calor",
+                     "Relación con el objetivo"]
 TITULO_APP = "Productividad estudiantil"
 SUBTITULO_APP = "Regresión lineal sobre hábitos de estudio"
 AUTOR = "Omar Alberto Torres"
@@ -121,6 +130,15 @@ COLUMNAS_HISTOGRAMAS = 3
 # Una variable entera con hasta este número de valores distintos se trata como discreta
 MAX_VALORES_DISCRETA = 25
 PUNTOS_KDE = 200
+CONTENEDORES_HISTOGRAMA = 30
+# Atípicos: valores fuera de [Q1 − FACTOR_IQR·IQR, Q3 + FACTOR_IQR·IQR] (criterio de Tukey)
+FACTOR_IQR = 1.5
+# Por debajo de este valor absoluto la asimetría se considera despreciable (distribución simétrica)
+UMBRAL_ASIMETRIA = 0.5
+METODOS_CORRELACION = {"Pearson": "pearson", "Spearman": "spearman"}
+# Escala divergente del mapa de calor: −1 rojo, 0 blanco, 1 azul
+ESCALA_MAPA_CALOR = [[0.0, COLORES["negativo"]], [0.5, COLORES["fondo_principal"]],
+                     [1.0, COLORES["primario"]]]
 # Tamaño (px) del pulgar y alto de la pista del control deslizante; Streamlit usa 12 y 4
 TAMANO_PULGAR_SLIDER = 24
 ALTO_PISTA_SLIDER = 6

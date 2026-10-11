@@ -1,4 +1,4 @@
-"""Aplicación Streamlit: ETL, análisis, entrenamiento y predicción de la productividad estudiantil."""
+"""Aplicación Streamlit: preparación, análisis, entrenamiento y predicción de la productividad estudiantil."""
 
 import pandas as pd
 import streamlit as st
@@ -62,8 +62,8 @@ def modelo_vigente() -> dict | None:
     return guardado
 
 
-# ================= 1. EXTRACCIÓN =================
-def render_extraccion() -> None:
+# ================= 1. CARGA DE DATOS =================
+def render_carga_datos() -> None:
     """Carga el CSV del proyecto o uno subido y muestra su estructura."""
     fuente = st.radio("Origen de los datos",
                       [f"Archivo del proyecto ({config.RUTA_DATOS.relative_to(config.RAIZ_PROYECTO).as_posix()})",
@@ -93,25 +93,26 @@ def render_extraccion() -> None:
         st.info("Elige un origen y pulsa el botón para cargar los datos.")
         return
 
-    # Solo para visualizar: la traducción real se aplica en Transformación
+    # Solo para visualizar: la traducción real se aplica en Verificación y limpieza
     vista = etl.traducir_columnas(ss["df_crudo"])
     c1, c2 = st.columns(2)
     c1.metric("Filas", f"{vista.shape[0]:,}")
     c2.metric("Columnas", vista.shape[1])
-    st.caption("Los nombres se muestran traducidos; la traducción se aplica al dataset en Transformación.")
+    st.caption("Los nombres se muestran traducidos; la traducción se aplica al dataset en "
+               f"{config.SECCION_VERIFICACION}.")
     st.subheader("Tipos de datos")
     interfaz.tabla(etl.resumen_tipos(vista), ocultar_indice=True)
     st.subheader("Datos")
     interfaz.tabla(vista)
 
 
-# ================= 2. TRANSFORMACIÓN =================
-def render_transformacion() -> None:
-    """Traduce, limpia, elimina identificadores y codifica las categóricas."""
-    if not requerir("df_crudo", "Extracción"):
+# ================= 2. VERIFICACIÓN Y LIMPIEZA =================
+def render_verificacion() -> None:
+    """Verifica nulos y duplicados, limpia y codifica los datos, y muestra sus estadísticas."""
+    if not requerir("df_crudo", config.SECCION_CARGA):
         return
 
-    if st.button("Aplicar transformación", type="primary"):
+    if st.button("Verificar y limpiar", type="primary"):
         try:
             resultado = etl.transformar(ss["df_crudo"])
         except ValueError as error:
@@ -119,10 +120,10 @@ def render_transformacion() -> None:
             return
         invalidar_desde("transformacion")
         ss["transformacion"] = resultado
-        st.success("Transformación aplicada.")
+        st.success("Datos verificados y limpios.")
 
     if "transformacion" not in ss:
-        st.info("Pulsa el botón para transformar los datos.")
+        st.info("Pulsa el botón para verificar y limpiar los datos.")
         return
 
     t = ss["transformacion"]
@@ -154,7 +155,7 @@ def render_transformacion() -> None:
     interfaz.tabla(descriptivas)
 
 
-# ================= 3. CARGA =================
+# ================= 3. DIVISIÓN DE DATOS =================
 def sincronizar_porcentaje(origen: str) -> None:
     """Iguala el control deslizante y el campo numérico del porcentaje de prueba.
 
@@ -170,9 +171,9 @@ def sincronizar_porcentaje(origen: str) -> None:
     ss["w_porcentaje_slider"] = ss["w_porcentaje_numero"] = ss["porcentaje_prueba_elegido"] = valor
 
 
-def render_carga() -> None:
+def render_division() -> None:
     """Divide en entrenamiento y prueba, y guarda el dataset procesado."""
-    if not requerir("transformacion", "Transformación"):
+    if not requerir("transformacion", config.SECCION_VERIFICACION):
         return
     datos = ss["transformacion"]["datos"]
     aplicado = ss.get("division", {}).get("porcentaje_prueba")
@@ -224,27 +225,106 @@ def render_carga() -> None:
                        file_name=config.RUTA_PROCESADO.name, mime="text/csv")
 
 
-# ================= 4. ANÁLISIS =================
-def render_analisis() -> None:
-    """Muestra distribuciones y la relación de cada variable con el objetivo."""
-    if not requerir("division", "Carga"):
-        return
-    X, y = ss["division"]["X_train"], ss["division"]["y_train"]
-    st.caption("El análisis usa solo el conjunto de entrenamiento.")
+# ================= 4. ANÁLISIS EXPLORATORIO =================
+def pestana_distribuciones(datos: pd.DataFrame) -> None:
+    """Dibuja un gráfico de distribución por variable.
 
-    st.subheader("Relación con la variable objetivo")
-    tabla = analisis.tabla_relaciones(X, y)
-    interfaz.tabla(tabla.style.format(precision=4), ocultar_indice=True)
-    st.plotly_chart(graficos.barras_informacion_mutua(tabla), use_container_width=True)
-
-    st.subheader("Distribuciones")
-    datos = pd.concat([X, y], axis=1)
+    Args:
+        datos (pd.DataFrame): Predictores y variable objetivo.
+    """
     columnas = st.columns(config.COLUMNAS_HISTOGRAMAS)
     for i, nombre in enumerate(datos.columns):
         with columnas[i % config.COLUMNAS_HISTOGRAMAS]:
             serie = datos[nombre]
             st.plotly_chart(graficos.histograma(serie, analisis.es_discreta(serie)),
                             use_container_width=True)
+
+
+def pestana_tendencia_central(X: pd.DataFrame) -> None:
+    """Muestra media, mediana, moda y atípicos para justificar el escalado con StandardScaler.
+
+    Args:
+        X (pd.DataFrame): Predictores del conjunto de entrenamiento.
+    """
+    st.markdown(
+        "`StandardScaler` resta la **media** y divide por la **desviación estándar**. Ambas son "
+        "sensibles a los valores atípicos, por eso antes de escalar se comprueba que en cada "
+        "variable la media y la mediana coincidan (distribución simétrica; en distribuciones con "
+        "un solo pico también la moda) y que no haya atípicos según el criterio del rango "
+        "intercuartílico "
+        f"(fuera de Q1 − {config.FACTOR_IQR}·IQR y Q3 + {config.FACTOR_IQR}·IQR).")
+    tabla = analisis.tabla_tendencia_central(X)
+    if tabla.empty:
+        st.info("No hay variables numéricas no binarias que analizar.")
+        return
+    formato = {c: "{:.4f}" for c in tabla.columns if c not in ("Variable", "Atípicos (IQR)")}
+    formato["% atípicos"] = "{:.2f}%"
+    interfaz.tabla(tabla.style.format(formato), ocultar_indice=True)
+    st.caption("Se omiten las variables binarias (dummies). En variables continuas la moda es el "
+               "centro del intervalo más frecuente del histograma. Una curtosis cercana a −1.2 "
+               "indica una distribución casi uniforme: todos los valores son igual de frecuentes, "
+               "la moda cae en cualquier punto del rango y no es representativa; ahí la simetría "
+               "se juzga con la media, la mediana y la asimetría. La variable objetivo no se "
+               "escala, por eso no aparece.")
+
+    no_aptas = analisis.variables_no_aptas_para_estandarizar(tabla)
+    if no_aptas.empty:
+        st.success(
+            "Ninguna variable tiene atípicos y todas son aproximadamente simétricas "
+            f"(|asimetría| ≤ {config.UMBRAL_ASIMETRIA}, media ≈ mediana). La media y la desviación "
+            "estándar representan bien a cada variable, así que **StandardScaler es adecuado**.")
+    else:
+        st.warning(
+            f"Variables con atípicos o asimetría apreciable: {', '.join(no_aptas['Variable'])}. "
+            "En ellas la media y la desviación estándar se desplazan hacia los extremos; conviene "
+            "tratar los atípicos o usar un escalador robusto (RobustScaler) antes de aplicar "
+            "StandardScaler.")
+    st.plotly_chart(graficos.cajas_estandarizadas(X[tabla["Variable"]]), use_container_width=True)
+
+
+def pestana_mapa_calor(datos: pd.DataFrame) -> None:
+    """Dibuja la matriz de correlación con el método que elija el usuario.
+
+    Args:
+        datos (pd.DataFrame): Predictores y variable objetivo.
+    """
+    metodo = st.radio("Método de correlación", list(config.METODOS_CORRELACION), horizontal=True,
+                      key="w_metodo_correlacion")
+    matriz = analisis.matriz_correlacion(datos, config.METODOS_CORRELACION[metodo])
+    st.plotly_chart(graficos.mapa_calor(matriz, metodo), use_container_width=True)
+    st.caption("Valores cercanos a 1 o −1 entre dos predictores indican multicolinealidad; "
+               f"la fila de {config.OBJETIVO} muestra la relación de cada variable con el objetivo.")
+
+
+def pestana_relacion_objetivo(X: pd.DataFrame, y: pd.Series) -> None:
+    """Muestra la tabla de Pearson, Spearman e información mutua y su gráfico.
+
+    Args:
+        X (pd.DataFrame): Predictores del conjunto de entrenamiento.
+        y (pd.Series): Variable objetivo del conjunto de entrenamiento.
+    """
+    tabla = analisis.tabla_relaciones(X, y)
+    interfaz.tabla(tabla.style.format(precision=4), ocultar_indice=True)
+    st.plotly_chart(graficos.barras_informacion_mutua(tabla), use_container_width=True)
+
+
+def render_analisis() -> None:
+    """Explora distribuciones, tendencia central, atípicos y correlaciones en pestañas."""
+    if not requerir("division", config.SECCION_DIVISION):
+        return
+    X, y = ss["division"]["X_train"], ss["division"]["y_train"]
+    datos = pd.concat([X, y], axis=1)
+    st.caption("El análisis usa solo el conjunto de entrenamiento.")
+
+    distribuciones, tendencia, calor, relacion = st.tabs(config.PESTANAS_ANALISIS)
+    with distribuciones:
+        pestana_distribuciones(datos)
+    with tendencia:
+        pestana_tendencia_central(X)
+    with calor:
+        pestana_mapa_calor(datos)
+    with relacion:
+        pestana_relacion_objetivo(X, y)
 
 
 # ================= 5. SELECCIÓN =================
@@ -261,7 +341,7 @@ def restaurar_widget(clave_widget: str, valor: object) -> None:
 
 def render_seleccion() -> None:
     """Permite elegir las variables del modelo."""
-    if not requerir("division", "Carga"):
+    if not requerir("division", config.SECCION_DIVISION):
         return
     disponibles = list(ss["division"]["X_train"].columns)
     por_defecto = [v for v in config.VARIABLES_POR_DEFECTO if v in disponibles]
@@ -302,7 +382,8 @@ def render_seleccion() -> None:
 # ================= 6. ENTRENAMIENTO =================
 def render_entrenamiento() -> None:
     """Entrena el pipeline y muestra métricas, coeficientes y gráficos."""
-    if not requerir("division", "Carga") or not requerir("seleccion", "Selección de variables"):
+    if (not requerir("division", config.SECCION_DIVISION)
+            or not requerir("seleccion", config.SECCION_SELECCION)):
         return
     variables = ss["seleccion"]
     st.write(f"**Variables ({len(variables)}):** {', '.join(variables)}")
@@ -412,7 +493,7 @@ def render_prediccion() -> None:
     """Predice con datos ingresados por el usuario o con un lote."""
     m = modelo_vigente()
     if m is None:
-        st.warning("No hay un modelo entrenado para la selección actual. Ve a **Entrenamiento**.")
+        st.warning(f"No hay un modelo entrenado para la selección actual. Ve a **{config.SECCION_ENTRENAMIENTO}**.")
         return
     if "modelo" not in ss:
         st.info("Usando el último modelo guardado en disco.")
@@ -427,7 +508,7 @@ def render_prediccion() -> None:
 
 # ================= NAVEGACIÓN =================
 SECCIONES = dict(zip(config.SECCIONES, [
-    render_extraccion, render_transformacion, render_carga, render_analisis,
+    render_carga_datos, render_verificacion, render_division, render_analisis,
     render_seleccion, render_entrenamiento, render_prediccion,
 ]))
 
@@ -446,8 +527,8 @@ def estado_barra_lateral() -> None:
     """Muestra el avance del flujo y los créditos; se dibuja después de la sección para estar al día."""
     st.sidebar.divider()
     interfaz.estado_pasos({
-        "Datos extraídos": "df_crudo" in ss,
-        "Datos transformados": "transformacion" in ss,
+        "Datos cargados": "df_crudo" in ss,
+        "Datos verificados y limpios": "transformacion" in ss,
         "Datos divididos": "division" in ss,
         "Variables seleccionadas": "seleccion" in ss,
         "Modelo entrenado": "modelo" in ss,
