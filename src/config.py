@@ -155,6 +155,12 @@ CURTOSIS_UNIFORME = -1.2
 # su |r| máximo y su R² validado quedan por debajo de estos umbrales
 UMBRAL_CORRELACION_INDEPENDENCIA = 0.05
 UMBRAL_R2_INDEPENDENCIA = 0.01
+# Cabeceras de la tabla de dependencia: Z es la variable de la fila y Xⱼ cada variable relevante
+COLUMNA_DEP_VARIABLE = "Variable (Z)"
+COLUMNA_DEP_PEARSON = "Pearson: máx |r(Z, Xⱼ)|"
+COLUMNA_DEP_SPEARMAN = "Spearman: máx |ρ(Z, Xⱼ)|"
+COLUMNA_DEP_R2 = "R² validado = 1 − SC_res / SC_tot"
+COLUMNA_DEP_IM = "Información mutua: Σⱼ I(Z; Xⱼ)"
 # Búsqueda de la fórmula generadora: pesos múltiplos de PASO_PESOS, con el peso más pequeño
 # entre PASO_PESOS y MAX_PESO_MINIMO, y TOLERANCIA_PESOS de margen frente a la rejilla
 PASO_PESOS = 0.1

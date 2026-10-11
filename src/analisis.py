@@ -6,7 +6,8 @@ import pandas as pd
 import streamlit as st
 from sklearn.feature_selection import mutual_info_regression
 from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import cross_val_score
+from sklearn.metrics import r2_score
+from sklearn.model_selection import cross_val_predict
 
 from src import config
 
@@ -161,10 +162,16 @@ def matriz_correlacion(datos: pd.DataFrame, metodo: str) -> pd.DataFrame:
 
 @st.cache_data(show_spinner="Comprobando si las demás variables dependen de las relevantes...")
 def tabla_dependencia(datos: pd.DataFrame, relevantes: list[str]) -> pd.DataFrame:
-    """Mide cuánto se puede explicar cada variable no relevante a partir de las relevantes.
+    """Mide cuánto se puede explicar cada variable no relevante (Z) a partir de las relevantes (Xⱼ).
 
-    Si una variable fuera un agregado (suma, promedio, cociente...) de las relevantes,
-    tendría una correlación, un R² o una información mutua altos.
+    Si Z fuera un agregado de las relevantes (suma, promedio, cociente...), alguna de estas
+    medidas sería alta:
+    - Pearson: la mayor correlación lineal de Z con una sola relevante.
+    - Spearman: igual, pero con rangos; detecta relaciones monótonas no lineales.
+    - R² validado: cuánto de Z explica una regresión lineal con todas las relevantes a la vez,
+      medido solo con predicciones fuera de muestra (cada fila la predice un modelo que no la vio).
+    - Información mutua: suma de la información compartida con cada relevante; detecta
+      cualquier tipo de relación.
 
     Args:
         datos (pd.DataFrame): Dataset con predictores y objetivo.
@@ -177,13 +184,25 @@ def tabla_dependencia(datos: pd.DataFrame, relevantes: list[str]) -> pd.DataFram
     otras = [c for c in datos.columns if c not in relevantes and c != config.OBJETIVO]
     filas = []
     for nombre in otras:
-        y = datos[nombre]
+        z = datos[nombre]
+
+        # Correlación de Z con cada relevante por separado; se guarda la mayor en valor absoluto
+        pearson_max = X.corrwith(z, method="pearson").abs().max()
+        spearman_max = X.corrwith(z, method="spearman").abs().max()
+
+        # Regresión Z ~ X₁ + … + Xₖ: cada predicción la hace un modelo entrenado sin esa fila
+        z_predicha = cross_val_predict(LinearRegression(), X, z, cv=config.N_PARTICIONES)
+        r2 = r2_score(z, z_predicha)
+
+        # Información mutua de Z con cada relevante, sumada
+        informacion_mutua = mutual_info_regression(X, z, random_state=config.SEMILLA).sum()
+
         filas.append({
-            "Variable": nombre,
-            "|r| máximo con las relevantes": X.corrwith(y).abs().max(),
-            "R² lineal (validación cruzada)": cross_val_score(
-                LinearRegression(), X, y, cv=config.N_PARTICIONES, scoring="r2").mean(),
-            "Información mutua total": mutual_info_regression(X, y, random_state=config.SEMILLA).sum(),
+            config.COLUMNA_DEP_VARIABLE: nombre,
+            config.COLUMNA_DEP_PEARSON: pearson_max,
+            config.COLUMNA_DEP_SPEARMAN: spearman_max,
+            config.COLUMNA_DEP_R2: r2,
+            config.COLUMNA_DEP_IM: informacion_mutua,
         })
     return pd.DataFrame(filas)
 

@@ -346,13 +346,30 @@ def pestana_datos_sinteticos(datos: pd.DataFrame) -> None:
         f"Las otras {n_otras} no influyen en el puntaje y **tampoco se calcularon a partir de esas "
         f"{len(relevantes)}** (por ejemplo, como sumas o promedios). Para comprobarlo se intentó "
         f"predecir cada una usando las {len(relevantes)} relevantes:")
-    dependencia = analisis.tabla_dependencia(datos, relevantes).rename(columns={
-        "|r| máximo con las relevantes": "Correlación máxima (0 a 1)",
-        "R² lineal (validación cruzada)": "R² (0 = no se puede predecir)",
-    })
+    dependencia = analisis.tabla_dependencia(datos, relevantes)
     interfaz.tabla(dependencia.style.format(precision=4), ocultar_indice=True)
-    r_max = dependencia["Correlación máxima (0 a 1)"].max()
-    r2_max = dependencia["R² (0 = no se puede predecir)"].max()
+    with st.expander("¿Cómo se calcula cada columna?", expanded=True):
+        st.markdown(f"**Z** es la variable de la fila y **X₁ … X{len(relevantes)}** son las "
+                    f"{len(relevantes)} variables relevantes. Todas las columnas valen 0 si Z no tiene "
+                    "ninguna relación con ellas.")
+        st.markdown("**Pearson:** correlación lineal de Z con cada relevante por separado; se muestra "
+                    "la mayor en valor absoluto (0 a 1).")
+        st.latex(r"r(Z, X_j) = \frac{\operatorname{cov}(Z, X_j)}{\sigma_Z\,\sigma_{X_j}}")
+        st.markdown("**Spearman:** la misma fórmula aplicada a las posiciones (rangos) de los valores; "
+                    "detecta relaciones que siempre suben o siempre bajan, aunque no sean rectas.")
+        st.latex(r"\rho(Z, X_j) = r\big(\operatorname{rango}(Z),\ \operatorname{rango}(X_j)\big)")
+        st.markdown(f"**R² validado:** una regresión lineal intenta predecir Z con las {len(relevantes)} "
+                    f"relevantes a la vez. Cada valor ẑᵢ lo predice un modelo entrenado sin esa fila "
+                    f"({config.N_PARTICIONES} particiones, `cross_val_predict`) y el R² se calcula con "
+                    "`r2_score`. Un valor un poco negativo significa que el modelo lo hace peor que "
+                    "predecir siempre la media: se lee como 0.")
+        st.latex(r"R^2 = 1 - \frac{SC_{res}}{SC_{tot}} = 1 - \frac{\sum_i (z_i - \hat z_i)^2}{\sum_i (z_i - \bar z)^2}")
+        st.markdown("**Información mutua:** cuánta información comparte Z con cada relevante, sumada. "
+                    "Detecta cualquier tipo de relación, también no lineal; no tiene máximo. Se estima "
+                    "con vecinos más cercanos (`mutual_info_regression`).")
+        st.latex(r"\sum_j I(Z; X_j), \qquad I(Z; X) = \iint p(z, x)\,\log\frac{p(z, x)}{p(z)\,p(x)}\,dz\,dx")
+    r_max = dependencia[[config.COLUMNA_DEP_PEARSON, config.COLUMNA_DEP_SPEARMAN]].max().max()
+    r2_max = dependencia[config.COLUMNA_DEP_R2].max()
     if r_max < config.UMBRAL_CORRELACION_INDEPENDENCIA and r2_max < config.UMBRAL_R2_INDEPENDENCIA:
         st.success(
             f"Ninguna se puede predecir con las {len(relevantes)} relevantes (R² ≈ 0 y correlaciones "
